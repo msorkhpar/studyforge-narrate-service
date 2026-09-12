@@ -145,19 +145,47 @@ def run_control(control, root=ROOT, run=_pytest):
 
 
 def run_controls(controls, root=ROOT, run=_pytest, report=print):
-    """Every control in turn. Returns the results; ⛔ a miss is a failure."""
+    """Every control in turn. Returns the results; ⛔ a miss is a failure.
+
+    ⛔ **The report names the ANCHOR, the EXPECTED test and the ACTUAL failures,
+    per control** — Ruling 342, which holds that a control table reports that
+    something fired and never that the *right* thing fired. ⭐ A count cannot
+    distinguish those two, so a count is not what this prints.
+    """
     results = []
     for control in controls:
+        anchor = _anchor_occurrences(root, control)
         result = run_control(control, root=root, run=run)
         results.append(result)
         if result.ok:
-            verdict = f"FIRED on {len(result.failed_tests)} test(s)"
+            verdict = f"FIRED on the expected test, and on {len(result.failed_tests)} in all"
         elif not result.fired:
             verdict = "⛔ DID NOT FIRE — the suite stayed green"
         else:
             verdict = f"⛔ FIRED ON THE WRONG TESTS — {result.expects_missing()}"
-        report(f"{control.id}  {control.what}\n    {verdict}")
+        report(
+            f"{control.id}  {control.what}\n"
+            f"    anchor    {control.path}, resolved {anchor}x before planting\n"
+            f"    expected  {control.expects}\n"
+            f"    actual    {_render(result.failed_tests)}\n"
+            f"    {verdict}"
+        )
     return results
+
+
+def _anchor_occurrences(root, control):
+    """How many times the anchor resolves. ⛔ Anything but 1 and no run is valid."""
+    return (Path(root) / control.path).read_text(encoding="utf-8").count(control.anchor)
+
+
+def _render(failed, limit=6):
+    """The failing test ids, short enough to read and never silently truncated."""
+    if not failed:
+        return "(none)"
+    names = [name.rsplit("::", 1)[-1] for name in failed]
+    if len(names) <= limit:
+        return ", ".join(names)
+    return ", ".join(names[:limit]) + f", +{len(names) - limit} more"
 
 
 def _expects_missing(self):
