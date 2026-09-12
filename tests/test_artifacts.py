@@ -8,6 +8,7 @@ import pytest
 
 from narrate.artifacts import (
     ADDRESS_HEX_CHARS,
+    ADDRESS_SCHEME,
     RECORD_FIELDS,
     RECORD_VERSION,
     ArtifactStore,
@@ -23,8 +24,8 @@ RECORD = {
 }
 
 
-def an_address(text="Some prose.", voice="am_liam", fmt="mp3"):
-    return address_for(text, voice, fmt)
+def an_address(text="Some prose.", voice="am_liam", fmt="mp3", chunk_chars=1800):
+    return address_for(text, voice, fmt, chunk_chars)
 
 
 class TestTheAddressIsAFunctionOfTheRequest:
@@ -44,23 +45,54 @@ class TestTheAddressIsAFunctionOfTheRequest:
     def test_changing_an_input_changes_the_address(self, changed):
         assert an_address() != an_address(**changed)
 
-    def test_the_audio_is_not_in_the_address(self):
-        """⛔ The R10 carve-out's mechanism.
+    def test_the_encoding_is_pinned_to_a_GOLDEN_digest(self):
+        """⛔ A concrete value, because *it is deterministic* is unfalsifiable.
 
-        Synthesised audio is not byte-for-byte reproducible, so an address over
-        the OUTPUT would change on every re-synthesis -- a cache that never
-        hits. The address is over the request, which is why it can be computed
-        before the engine is called at all, with no bytes in hand.
+        ⚠️ **This replaces a test that was born vacuous** (`CTO-69/10`): it
+        asserted that a non-empty string was truthy, under a docstring making a
+        real claim about the address. ⭐ A golden digest fails if the scheme
+        name, the field ORDER, the length prefixing or the text encoding
+        changes -- which is every way the recipe published in `consuming.json`
+        could silently stop matching the code.
+
+        ⛔ **If this fails, the address scheme changed and `ADDRESS_SCHEME` must
+        be bumped with it** -- see the module docstring's own rule.
         """
-        assert an_address(text="Never synthesised.")
+        assert address_for("The first speech unit.", "am_liam", "mp3", 1800) == (
+            "344041840d9cb43fb30e60d4768c7dc8fe7b662fead7b119d5913713eb44b450"
+        )
 
     def test_the_fields_are_length_prefixed_so_they_cannot_be_recut(self):
         """⛔ The classic collision, asserted rather than argued.
 
-        Without a length prefix, `voice="a", text="bc"` and `voice="ab",
-        text="c"` hash the same concatenation.
+        ⚠️ **THE INPUTS ARE LOAD-BEARING AND THIS TEST WENT VACUOUS ONCE.** Its
+        original pair -- `voice="a", text="bc"` against `voice="ab", text="c"`
+        -- collided only while `voice` and `text` were adjacent in the hashed
+        order. Inserting `chunk_chars` between them separated the two and the
+        test then passed with the length prefixing REMOVED, which the committed
+        control `p09` caught by firing on the wrong tests.
+
+        ⭐ **So the collision is now ASSERTED rather than assumed**: the first
+        assertion pins that these inputs really do share one naive
+        concatenation, and it fails loudly if a future field order separates
+        them again. Only then does the second assertion mean anything.
         """
-        assert address_for("bc", "a", "mp3") != address_for("c", "ab", "mp3")
+        first = {"text": "0bc", "voice": "a", "fmt": "mp3", "chunk_chars": 1800}
+        second = {"text": "bc", "voice": "a1", "fmt": "mp3", "chunk_chars": 8000}
+
+        def naive(fields):
+            """What an unprefixed digest would be fed."""
+            return "".join([
+                ADDRESS_SCHEME, fields["fmt"], fields["voice"],
+                str(fields["chunk_chars"]), fields["text"],
+            ])
+
+        assert naive(first) == naive(second), (
+            "these inputs no longer collide without prefixing, so the "
+            "assertion below would hold for a digest that did not prefix; "
+            "choose a pair that collides under the current field order"
+        )
+        assert address_for(**first) != address_for(**second)
 
     def test_the_text_is_not_normalised_and_that_is_the_safe_direction(self):
         """⚠️ Deliberate: `" Hello "` and `"Hello"` are different addresses.

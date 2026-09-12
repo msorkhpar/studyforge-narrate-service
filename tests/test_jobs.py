@@ -110,8 +110,12 @@ class TestAJobOfManySegments:
         manifest, _, _ = submit(FOUR, tmp_path)
         addressing = manifest["addressing"]
         assert addressing["hash"] == "sha256"
-        assert addressing["over"] == ["format", "voice", "text"]
-        recomputed = address_for("The first speech unit.", "am_liam", "mp3")
+        assert addressing["over"] == ["format", "voice", "chunk_chars", "text"]
+        # ⛔ The budget is part of the address and is a DEPLOYMENT setting, so
+        # the manifest has to carry its value or the recipe is unfollowable.
+        assert addressing["chunk_chars"] == 1800
+        recomputed = address_for("The first speech unit.", "am_liam", "mp3",
+                                 addressing["chunk_chars"])
         assert entries(manifest)["u01-s001"]["artifact_id"] == recomputed
 
     def test_the_voice_and_format_are_job_wide_and_reach_every_segment(self, tmp_path):
@@ -410,10 +414,28 @@ class TestARequestThatIsNotAJobNeverRuns:
                        "format": "wav"}, default_voice="am_liam")
         assert identifier not in str(raised.value)
 
-    def test_nothing_is_synthesised_when_parsing_fails(self, tmp_path):
+    def test_a_job_with_ONE_bad_segment_synthesises_NONE_of_the_good_ones(
+        self, tmp_path
+    ):
+        """⛔ Validation covers the WHOLE list before any segment runs.
+
+        ⚠️ **This test replaces one that was born vacuous** (`CTO-69/10`): it
+        built an engine and a `tmp_path`, wired NEITHER into anything, and then
+        asserted the engine made no calls and the directory was empty -- both
+        true by construction, whatever the code did, and it survived a revert
+        of the feature it named.
+
+        ⭐ Here the engine and the store are the ones `submit` actually uses,
+        and the bad segment is LAST. A parser that validated lazily inside the
+        run would synthesise `good` before reaching `bad id`, so the assertion
+        can fail.
+        """
         engine = FakeEngine()
+        store = ArtifactStore(tmp_path)
         with pytest.raises(InvalidJob):
-            parse_job({"segments": []}, default_voice="am_liam")
+            submit([{"id": "good", "text": "Real prose."},
+                    {"id": "bad id", "text": "Also real prose."}],
+                   tmp_path, engine=engine, store=store)
         assert engine.calls == []
         assert list(tmp_path.iterdir()) == []
 

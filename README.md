@@ -25,20 +25,25 @@ already got right are carried over unchanged:
   artifact. No caller keeps stitching logic, and the property holds whatever
   the engine's own input limit turns out to be — because the splitting happens
   here rather than being delegated to the engine.
-- ⭐ **Writes are atomic.** An artifact lands in a temporary sibling and is
-  renamed onto its final name, so an interrupted run never leaves a truncated
-  file that looks finished. ⚠️ **A truncated audio file plays** — it simply
-  stops mid-sentence — which is why this is the failure worth engineering
-  against.
+- ⭐ **Writes are atomic, and safe under concurrency.** An artifact lands in its
+  own unique temporary sibling and is renamed onto its final name, so an
+  interrupted run never leaves a truncated file that looks finished — and two
+  callers sending identical prose at the same time, which content addressing
+  makes the *expected* case, cannot publish a mixture of their two syntheses.
+  ⚠️ **A truncated audio file plays** — it simply stops mid-sentence — which is
+  why this is the failure worth engineering against.
 
 And one the service adds:
 
 - ⭐ **Synthesis is idempotent.** An artifact's id is a **content address** over
-  the format, the voice and the text, so re-submitting an unchanged segment
-  synthesises nothing and returns the same id. Change one segment's prose and
-  one segment is re-synthesised. ⚠️ **The address is over the request, never
-  over the audio** — a speech model may emit different bytes for identical
-  input, so a digest of the output would be a cache that never hits.
+  the format, the voice, the chunk budget and the text, so re-submitting an
+  unchanged segment synthesises nothing and returns the same id. Change one
+  segment's prose and one segment is re-synthesised. ⚠️ **The address is over
+  the request, never over the audio** — a speech model may emit different bytes
+  for identical input, so a digest of the output would be a cache that never
+  hits. ⛔ **The chunk budget is in it** because each chunk is a separate engine
+  request and the pieces are concatenated, so a different budget is different
+  bytes at every join.
 
 ## ⛔ Two rules for anyone calling this
 
@@ -125,8 +130,22 @@ python3 -m pytest -ra
 ```
 
 ⭐ **Nothing in the suite needs a running engine or a GPU.** The engine is
-injected, so every route, every failure branch and both carried-over properties
-are exercised offline. That the real engine accepts the request shape is
+injected, so every route, every failure branch and every carried-over property
+are exercised offline.
+
+### ⛔ And the controls that prove the suite can go red
+
+```bash
+python3 -m tools.plant        # every control; a control that does not fire FAILS
+python3 -m tools.plant p07    # one, by id
+```
+
+⭐ **A green suite that cannot go red measures nothing**, so each property has a
+control that breaks it deliberately and names the test that must fire. ⚠️ **An
+anchor that does not match exactly once is refused** rather than silently
+applying nothing, and the ordinary suite asserts that every committed anchor
+still resolves — so a refactor that moves one turns the harness red instead of
+quietly disarming a control. That the real engine accepts the request shape is
 established by a recorded measurement, not by a test that skips when the
 deployment is down.
 
@@ -139,6 +158,7 @@ deployment is down.
 | `narrate/chunking.py` | where a long text is cut, and why there |
 | `narrate/artifacts.py` | the atomic write, and the content address |
 | `narrate/jobs.py` | the batch job, and what its manifest says |
+| `tools/plant.py` | ⛔ the negative-control harness: plant a defect, prove the suite catches it, restore |
 | `narrate/mpeg.py` | the gate that makes *playable* a checked claim, not a hope |
 | `narrate/engine/` | the engine seam — the contract, the registry, and Kokoro over HTTP |
 | `narrate/config.py` | every setting, from the environment |

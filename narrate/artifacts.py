@@ -15,7 +15,7 @@ the non-atomic write this module removes.
 
 ## ⭐ The id is a CONTENT ADDRESS, and this module is the one place it is minted
 
-⛔ **`address_for(text, voice, fmt)` replaced a random `mint_id()`, and the
+⛔ **`address_for(text, voice, fmt, chunk_chars)` replaced a random `mint_id()`, and the
 change is the whole of this store's contribution to idempotence.** Two requests
 that would produce the same audio produce the same id, so the second finds the
 first already stored and synthesises nothing (`narrate.synthesis`).
@@ -33,6 +33,7 @@ the REQUEST**: the inputs that decide what is said and how.
 | the scheme's own name and version | so a future change to what is hashed cannot collide with today's addresses |
 | `format` | different formats are different bytes, and the store keeps one file per address |
 | `voice` | changing a corpus's voice must invalidate that corpus's audio, and only that corpus's |
+| `chunk_chars` | ⛔ **the budget decides WHERE the text is cut, each chunk is a separate engine request, and the pieces are concatenated — so a different budget is different bytes at every join** |
 | `text` | ⭐ **exactly as submitted. No normalisation. See below** |
 
 ⛔ **THE ENGINE IS NOT IN THE ADDRESS**, and that is a decision rather than an
@@ -62,6 +63,8 @@ import hashlib
 import json
 import os
 import re
+import tempfile
+import threading
 from pathlib import Path
 
 #: The addressing scheme's own name, hashed first and before anything else. ⛔ A
@@ -69,10 +72,19 @@ from pathlib import Path
 #: which is what stops a new scheme's address colliding with an old one's over
 #: different inputs. It is also published, so a caller can recompute an address
 #: itself and decide what to submit (`narrate.jobs`, and the manifest).
-ADDRESS_SCHEME = "narrate-address-1"
+ADDRESS_SCHEME = "narrate-address-2"
 
 #: The request fields the address covers, in the order they are hashed.
-ADDRESS_FIELDS = ("format", "voice", "text")
+#:
+#: ⛔ **`chunk_chars` is here and its absence was a real defect** (`CTO-69/9`).
+#: The budget decides where the text is cut; each chunk is a SEPARATE engine
+#: request and the pieces are concatenated, so a different budget is a
+#: different byte-stream at every join. Two deployments sharing a store served
+#: audio that did not match the request, under an address asserting that it
+#: did. ⚠️ **The scheme number above moved with it**, per this module's own
+#: rule: a change to WHAT is hashed bumps it, so no address minted under the
+#: incomplete set can be mistaken for one minted under this one.
+ADDRESS_FIELDS = ("format", "voice", "chunk_chars", "text")
 
 #: `hashlib.sha256().hexdigest()` is 64 lowercase hexadecimal characters.
 ADDRESS_HEX_CHARS = 64
@@ -107,14 +119,24 @@ class UnknownArtifact(KeyError):
     """No artifact by that id. Nothing was read."""
 
 
-def address_for(text, voice, fmt):
+def address_for(text, voice, fmt, chunk_chars):
     """The content address of the artifact these inputs would produce.
 
-    Deterministic, and a pure function of its arguments: the same three values
+    Deterministic, and a pure function of its arguments: the same four values
     always give the same 64-character address, on any host and in any process.
+
+    ⚠️ **`chunk_chars` is included even though it changes nothing for a text
+    shorter than the budget**, which is most segments. Retuning it therefore
+    re-synthesises a store that would have been byte-identical. ⭐ **The
+    alternative — addressing the CHUNK LIST rather than the text and the budget
+    — is exactly correct and was rejected**: it makes the address impossible to
+    recompute without reimplementing the chunker, and `consuming.json`
+    publishes the recipe precisely so an incremental build need not. ⛔ **The
+    error direction is the one this module chose for whitespace too:
+    synthesise twice, never speak the wrong words.**
     """
     digest = hashlib.sha256()
-    for field in (ADDRESS_SCHEME, fmt, voice, text):
+    for field in (ADDRESS_SCHEME, fmt, voice, str(chunk_chars), text):
         encoded = field.encode("utf-8")
         # ⛔ Length-prefixed, so no choice of field values can be re-cut into a
         # different tuple with the same digest.
@@ -142,9 +164,20 @@ class ArtifactStore:
     never three thousand multi-megabyte ones.
     """
 
+    #: ⛔ Publish locks, STRIPED rather than one per address. A dict keyed by
+    #: address would grow without bound in a long-running service; 64 stripes
+    #: is a fixed cost, and two unrelated addresses colliding on one stripe
+    #: merely serialises two writes, which is harmless.
+    _STRIPES = 64
+
     def __init__(self, directory, suffix="mp3"):
         self._directory = Path(directory)
         self._suffix = suffix
+        self._publish_locks = [threading.Lock() for _ in range(self._STRIPES)]
+
+    def _publish_lock(self, artifact_id):
+        """The lock guarding `artifact_id`'s two-file publish."""
+        return self._publish_locks[int(artifact_id[:8], 16) % self._STRIPES]
 
     @property
     def directory(self):
@@ -217,32 +250,66 @@ class ArtifactStore:
         leaves a miss rather than a hit that cannot be described -- and the
         next attempt overwrites both.
 
-        The temporary is removed on every failure path, so a crashed or refused
-        synthesis leaves the directory exactly as it found it.
+        ⛔ **The pair is published under a lock, and that is about CONCURRENCY
+        rather than about crashes.** The server is a `ThreadingHTTPServer`, and
+        content addressing makes same-address concurrency the EXPECTED case:
+        two callers sending identical prose both miss the cache and both
+        synthesise. Without the lock, one writer's audio can be published
+        beside the other writer's record -- two complete artifacts, but a
+        `seconds` a caller uses for highlight sync that belongs to the twin.
+
+        ⚠️ **The lock is in-process, which is the concurrency this service
+        actually creates** (one serving process per deployment). Two PROCESSES
+        sharing one store can still cross a record with its twin's audio; both
+        halves are complete and valid and only the byte and duration figures
+        can belong to the sibling synthesis. ⭐ **Named rather than implied: the
+        unique temporary below is what makes even that case safe from a
+        TRUNCATED file, which is the failure that matters.**
         """
         if not data:
             raise ValueError("refusing to store an empty artifact")
         destination = self.path_for(artifact_id)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(destination, data)
-        _atomic_write(
-            self.record_path_for(artifact_id),
-            json.dumps(dict(record, record=RECORD_VERSION),
-                       sort_keys=True).encode("utf-8"),
-        )
+        with self._publish_lock(artifact_id):
+            _atomic_write(destination, data)
+            _atomic_write(
+                self.record_path_for(artifact_id),
+                json.dumps(dict(record, record=RECORD_VERSION),
+                           sort_keys=True).encode("utf-8"),
+            )
         return destination
 
 
 def _atomic_write(destination, data):
-    """`data` at `destination`, via a temporary sibling and one rename."""
-    temporary = destination.parent / f".{destination.name}.tmp"
+    """`data` at `destination`, via a UNIQUE temporary sibling and one rename.
+
+    ⛔ **The temporary is unique per call, and a name derived from the
+    destination was a real defect** (`CTO-69/7`, `CTO-69/8`). Every writer of
+    one address shared one staging path, so one writer's `write_bytes`
+    truncated another's staged bytes and the first rename published the
+    mixture under a valid content address -- ⚠️ **precisely the truncated-file
+    failure this module opens by claiming to have eliminated, and a truncated
+    mp3 plays.** The shared name also made the `finally` below delete a
+    temporary another writer was still using, so its rename raised.
+
+    ⭐ **`mkstemp` in the destination's own directory keeps both carried
+    properties**: the staging file is a sibling, so `os.replace` is still one
+    atomic rename within one filesystem, and the temporary is still removed on
+    every failure path.
+    """
+    handle, staged = tempfile.mkstemp(
+        prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent
+    )
+    temporary = Path(staged)
     try:
-        temporary.write_bytes(data)
+        with os.fdopen(handle, "wb") as stream:
+            stream.write(data)
         os.replace(temporary, destination)
     finally:
         # `os.replace` consumed the temporary on the happy path; this is for
         # every other path, and it is why an interrupted run leaves neither a
-        # truncated file nor a stray temporary behind.
+        # truncated file nor a stray temporary behind. ⭐ It can now only ever
+        # remove THIS call's own staging file.
         try:
             temporary.unlink()
         except FileNotFoundError:

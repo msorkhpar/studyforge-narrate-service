@@ -86,6 +86,10 @@ class _Handler(BaseHTTPRequestHandler):
             # ⭐ Which PROMISE this deployment is making, so a caller can check
             # it before it builds a job rather than after. Not the build.
             "provides": PROVIDES,
+            # ⛔ Part of the content address and a DEPLOYMENT setting, so a
+            # caller that recomputes an address for itself cannot get it from
+            # a constant. Published here and in every manifest.
+            "chunk_chars": service.chunk_chars,
             "engine_reachable": service.engine.reachable(),
             "formats": list(SUPPORTED_FORMATS),
         }

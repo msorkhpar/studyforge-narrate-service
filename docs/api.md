@@ -1,5 +1,14 @@
 # The `narrate-service` HTTP API
 
+<!-- ⚠️ This document is over the 400-line guidance a source module carries.
+     Deliberate, and declared here rather than left to be noticed: an API
+     reference is answered in one read or it is answered twice, and splitting
+     four routes across files makes a consumer open two of them to learn what
+     one call returns. R11's own escape is written for CODE modules
+     ("justified in the module's own docstring") and this is the nearest
+     equivalent for a document. Every source and test module in this
+     repository is inside its limit. -->
+
 Version `0.1.0`, promise `provides: 2`. Four routes. Every request and
 response body is JSON except a synthesised artifact, which is audio.
 
@@ -48,6 +57,7 @@ curl -fsS http://127.0.0.1:8870/healthz
   "status": "ok",
   "version": "0.1.0",
   "provides": 2,
+  "chunk_chars": 1800,
   "engine_reachable": true,
   "formats": ["mp3"],
   "engine": "kokoro",
@@ -61,6 +71,7 @@ curl -fsS http://127.0.0.1:8870/healthz
 | `status` | `"ok"` whenever the service answers at all |
 | `version` | the service's **build** version |
 | `provides` | ⭐ the version of the **promise** — the routes, the manifest's shape, and the cache's behaviour |
+| `chunk_chars` | ⛔ **this deployment's chunk budget, which is part of the content address.** Published because a caller that recomputes an address for itself cannot get a deployment setting from a constant |
 | `engine` | the engine **family** deployed |
 | `engine_profile` | `cpu`, `gpu`, or `unknown`. ⚠️ **Declared by the deployment, never detected** — see *Profiles* below |
 | `engine_model` | the model the engine is asked for |
@@ -395,17 +406,30 @@ store is exactly as you found it.
 
 ### ⭐ Synthesis is **idempotent**, because artifacts are content-addressed
 
-An artifact's id is `sha256` over the scheme's own name, the `format`, the
-`voice` and the `text` — each length-prefixed, so no two different requests can
-be re-cut into the same digest. ⛔ **Re-submitting a segment whose text and
-voice are unchanged synthesises nothing and returns the same address.** That is
-what makes incremental regeneration possible: change one segment's prose and
-one segment is re-synthesised.
+An artifact's id is `sha256` over the scheme's own name (`narrate-address-2`),
+the `format`, the `voice`, the **chunk budget** and the `text` — each
+length-prefixed, so no two different requests can be re-cut into the same
+digest. ⛔ **Re-submitting a segment whose inputs are unchanged synthesises
+nothing and returns the same address.** That is what makes incremental
+regeneration possible: change one segment's prose and one segment is
+re-synthesised.
+
+⚠️ **`chunk_chars` is in the address and that is not an obvious inclusion.** The
+budget decides where a long text is cut; each chunk is a **separate engine
+request** and the pieces are concatenated, so a different budget is different
+bytes at every join. Leaving it out let two deployments sharing one store serve
+audio that did not match the request, under an address asserting that it did.
+⭐ **The cost, stated plainly: retuning `NARRATE_CHUNK_CHARS` re-synthesises the
+whole store**, including the many segments shorter than either budget whose
+audio would have been identical. Synthesising twice is the cheaper error than
+speaking the wrong words.
 
 ⭐ **You can compute an address yourself, before you send anything.** Every
-manifest publishes `addressing`, and `consuming.json` carries the same block —
-so an incremental build can decide what to submit rather than submitting
-everything and hoping.
+manifest publishes `addressing` — including this deployment's `chunk_chars` —
+and `consuming.json` carries the same recipe, so an incremental build can
+decide what to submit rather than submitting everything and hoping. ⚠️ **Take
+the budget from `/healthz` or from a manifest, never from the documented
+default**, which is what a deployment is free to override.
 
 ⚠️ **The address is over the REQUEST, never over the audio.** A speech model is
 not guaranteed to emit identical bytes for identical input, so a digest of the
@@ -425,6 +449,25 @@ the cheaper error.
 
 ⚠️ **Nothing is garbage-collected.** An edited segment's old artifact stays on
 disk under its old address, playable by nothing. Reconciliation is yours.
+
+### ⭐ And it is safe when two callers send the same prose at once
+
+Content addressing makes same-address concurrency the **expected** case: two
+callers submitting identical text both miss the cache and both synthesise. The
+service is threaded, so both writes really are concurrent.
+
+⛔ **Each write stages to its own unique temporary in the destination's
+directory**, so a rename can only ever publish one complete synthesis — never a
+mixture of two, and never a truncated file. ⚠️ **A truncated mp3 plays**, which
+is why this is engineered against rather than argued about. The audio and the
+record beside it are published under one lock, so the two always describe the
+same artifact.
+
+⚠️ **The residual, named rather than implied:** that lock is in-process. Two
+separate *processes* sharing one store can still leave a record from one
+synthesis beside its twin's audio — both complete and valid, with only the byte
+count and duration belonging to the twin. One serving process per deployment is
+the shape this service is built and run in.
 
 ---
 

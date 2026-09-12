@@ -68,9 +68,21 @@ ADDRESSING = {
     "scheme": ADDRESS_SCHEME,
     "hash": "sha256",
     "over": list(ADDRESS_FIELDS),
-    "encoding": "utf-8, each field length-prefixed as '<bytes>:' before the bytes",
+    "encoding": "utf-8, each field length-prefixed as '<bytes>:' before the "
+                "bytes; chunk_chars as its decimal digits",
     "order": [ADDRESS_SCHEME, *ADDRESS_FIELDS],
 }
+
+
+def addressing(chunk_chars):
+    """`ADDRESSING` plus THIS deployment's chunk budget.
+
+    ⛔ **The budget is part of the address and is a deployment setting**, so a
+    caller that wants to recompute an address before submitting needs its
+    value and cannot get it from a constant. Publishing the recipe without it
+    would be publishing a recipe nobody can follow.
+    """
+    return dict(ADDRESSING, chunk_chars=chunk_chars)
 
 #: ⛔ A closed pattern for a caller's own segment id. It never reaches the
 #: filesystem -- the artifact id does, and that is minted here -- but it is
@@ -180,7 +192,7 @@ def run_job(job, engine, store, chunk_chars, media_types, provides):
             segment, job, engine, store, chunk_chars, media_types
         )
         entries.append(entry)
-    return _manifest(job, entries, provides)
+    return _manifest(job, entries, provides, chunk_chars)
 
 
 def _run_segment(segment, job, engine, store, chunk_chars, media_types):
@@ -229,7 +241,7 @@ def _skipped(segment, reason):
     }
 
 
-def _manifest(job, entries, provides):
+def _manifest(job, entries, provides, chunk_chars):
     counts = {status: 0 for status in SEGMENT_STATUSES}
     for entry in entries:
         counts[entry["status"]] += 1
@@ -241,7 +253,7 @@ def _manifest(job, entries, provides):
         "provides": provides,
         "voice": job.voice,
         "format": job.fmt,
-        "addressing": ADDRESSING,
+        "addressing": addressing(chunk_chars),
         "counts": dict(counts, total=len(entries)),
         "ok": counts["failed"] == 0 and counts["skipped"] == 0,
         "segments": entries,

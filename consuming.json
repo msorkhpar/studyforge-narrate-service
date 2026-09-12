@@ -45,7 +45,9 @@
         "name": "NARRATE_ENGINE",
         "default": "kokoro",
         "required": false,
-        "one_of": ["kokoro"]
+        "one_of": [
+          "kokoro"
+        ]
       },
       {
         "name": "NARRATE_ENGINE_URL",
@@ -57,7 +59,11 @@
         "name": "NARRATE_ENGINE_PROFILE",
         "default": "unknown",
         "required": false,
-        "one_of": ["cpu", "gpu", "unknown"],
+        "one_of": [
+          "cpu",
+          "gpu",
+          "unknown"
+        ],
         "note": "declared by the deployment, never detected by the service"
       },
       {
@@ -99,7 +105,9 @@
     "default": "cpu",
     "cpu": {
       "opt_in": null,
-      "compose_files": ["compose.yaml"],
+      "compose_files": [
+        "compose.yaml"
+      ],
       "engine_image": "ghcr.io/remsky/kokoro-fastapi-cpu:v0.8.2@sha256:8545e2a4ae8d040749a369a848236fcf768aabc3b5b7a89451afa6507101c59a",
       "requires": {
         "gpu": false,
@@ -111,7 +119,10 @@
     },
     "gpu": {
       "opt_in": "-f compose.yaml -f compose.gpu.yaml",
-      "compose_files": ["compose.yaml", "compose.gpu.yaml"],
+      "compose_files": [
+        "compose.yaml",
+        "compose.gpu.yaml"
+      ],
       "engine_image": "ghcr.io/remsky/kokoro-fastapi-gpu:v0.8.2-cu128-amd64@sha256:a95e53e3ed3da1c73ca7a36e4608c451f19117205d28252bad1f4c07062ec387",
       "requires": {
         "gpu": true,
@@ -121,7 +132,9 @@
           {
             "driver": "nvidia",
             "count": "all",
-            "capabilities": ["gpu"]
+            "capabilities": [
+              "gpu"
+            ]
           }
         ]
       },
@@ -155,9 +168,15 @@
         "response": "audio/mpeg"
       }
     ],
-    "formats": ["mp3"],
+    "formats": [
+      "mp3"
+    ],
     "max_request_bytes": 4194304,
-    "engine_reported_on": ["/healthz", "POST /v1/speech", "POST /v1/jobs"],
+    "engine_reported_on": [
+      "/healthz",
+      "POST /v1/speech",
+      "POST /v1/jobs"
+    ],
     "engine_headers": [
       "Narrate-Engine",
       "Narrate-Engine-Model",
@@ -167,21 +186,44 @@
       "versioned_by": "provides",
       "one_entry_per_submitted_id": true,
       "http_status_for_a_well_formed_job": 200,
-      "segment_statuses": ["synthesised", "cached", "failed", "skipped"],
-      "failure_reasons": ["engine_unavailable", "engine_failed", "not_synthesisable"],
-      "halts_the_job": ["engine_unavailable"],
+      "segment_statuses": [
+        "synthesised",
+        "cached",
+        "failed",
+        "skipped"
+      ],
+      "failure_reasons": [
+        "engine_unavailable",
+        "engine_failed",
+        "not_synthesisable"
+      ],
+      "halts_the_job": [
+        "engine_unavailable"
+      ],
       "max_segments": 5000
     },
     "cache": {
       "content_addressed": true,
       "idempotent": true,
-      "scheme": "narrate-address-1",
+      "scheme": "narrate-address-2",
       "hash": "sha256",
-      "over": ["format", "voice", "text"],
-      "encoding": "utf-8, each field length-prefixed as '<bytes>:' before the bytes",
-      "order": ["narrate-address-1", "format", "voice", "text"],
+      "over": [
+        "format",
+        "voice",
+        "chunk_chars",
+        "text"
+      ],
+      "encoding": "utf-8, each field length-prefixed as '<bytes>:' before the bytes; chunk_chars as its decimal digits",
+      "order": [
+        "narrate-address-2",
+        "format",
+        "voice",
+        "chunk_chars",
+        "text"
+      ],
       "engine_in_address": false,
-      "note": "the engine is deliberately not in the address, so moving between the cpu and gpu profiles of one model does not re-synthesise a corpus; a cached artifact reports the engine that actually made it"
+      "note": "the engine is deliberately not in the address, so moving between the cpu and gpu profiles of one model does not re-synthesise a corpus; a cached artifact reports the engine that actually made it. chunk_chars IS in the address because it decides where the text is cut and each chunk is a separate engine request, so a different budget is different bytes at every join; its value for this deployment is published on GET /healthz and in every manifest",
+      "chunk_chars_is_a_deployment_setting": true
     },
     "caller_obligations": [
       "gate personal data out of the text before the request; this service never inspects it",
