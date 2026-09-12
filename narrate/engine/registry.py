@@ -42,6 +42,11 @@ def _build_kokoro(config):
         config.engine_url,
         config.timeout,
         profile=config.engine_profile,
+        # ⛔ The deployment's default voice reaches the ADAPTER, because the
+        # adapter is what knows whether it exists. A misspelled `NARRATE_VOICE`
+        # is therefore refused here, at startup, naming what is permitted --
+        # not accepted and discovered on the first request.
+        voice=config.voice,
     )
 
 
@@ -57,9 +62,11 @@ def engine_names():
 def build_engine(config):
     """The engine `config` names, checked against the adapter contract.
 
-    ⛔ Raises `UnknownEngine` for a name that is not in the closed set, and
-    `NotAnEngine` if a registered factory returns something that does not
-    satisfy the contract -- both at startup, before anything is served.
+    ⛔ Raises `UnknownEngine` for a name that is not in the closed set,
+    `UnknownVoice` if the deployment's default voice is not one the adapter
+    offers, and `NotAnEngine` if a registered factory returns something that
+    does not satisfy the contract -- all at startup, before anything is
+    served.
     """
     try:
         factory = ENGINES[config.engine]

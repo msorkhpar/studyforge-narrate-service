@@ -27,7 +27,8 @@ from narrate.engine import (
     UnknownEngine,
 )
 from narrate.server import MAX_BODY_BYTES, build_server
-from tests.support import FakeEngine, mpeg_bytes
+from narrate.voices import UnknownVoice
+from tests.support import NO_SUCH_VOICE, FakeEngine, mpeg_bytes
 
 
 @pytest.fixture
@@ -59,6 +60,10 @@ def test_healthz_reports_the_engine(service):
     assert payload["engine"] == "fake"
     assert payload["engine_reachable"] is True
     assert payload["formats"] == ["mp3"]
+    # ⛔ Part of the content address of every segment submitted WITHOUT a
+    # voice, and a deployment setting -- the same argument as chunk_chars.
+    assert payload["default_voice"] == "am_liam"
+    assert payload["voices"] == 2
 
 
 def test_healthz_reports_an_unreachable_engine_without_failing(service):
@@ -67,6 +72,103 @@ def test_healthz_reports_an_unreachable_engine_without_failing(service):
     response, body = request("GET", "/healthz")
     assert response.status == 200
     assert json.loads(body)["engine_reachable"] is False
+
+
+class TestTheVoiceCatalogueIsDiscoverableThroughTheAPI:
+    """⭐ `NS-04`'s first Acceptance, at the surface a consumer actually uses."""
+
+    def test_the_route_lists_every_voice_with_its_four_fields(self, service):
+        request = service(FakeEngine())
+        response, body = request("GET", "/v1/voices")
+
+        assert response.status == 200
+        assert response.getheader("Content-Type") == "application/json"
+        payload = json.loads(body)
+        assert payload["engine"] == "fake"
+        assert payload["default"] == "am_liam"
+        assert [v["id"] for v in payload["voices"]] == ["am_liam", "af_bella"]
+        for entry in payload["voices"]:
+            assert sorted(entry) == ["gender", "id", "language", "name"]
+
+    def test_it_answers_IDENTICALLY_with_the_engine_down(self, service):
+        """⛔ The property that makes it usable as the answer to a refusal.
+
+        ⚠️ A catalogue fetched from the engine would turn *"no such voice"*
+        into *"try again later"* exactly when a caller most needs the list.
+        """
+        up, _ = service(FakeEngine())("GET", "/v1/voices")
+        down_request = service(FakeEngine(reachable_=False))
+        down, body = down_request("GET", "/v1/voices")
+        assert (up.status, down.status) == (200, 200)
+        assert json.loads(body)["voices"]
+
+    def test_the_default_it_reports_is_the_one_healthz_reports(self, service):
+        """⛔ ONE source. Two would be two things that can disagree."""
+        request = service(FakeEngine())
+        health = json.loads(request("GET", "/healthz")[1])
+        voices = json.loads(request("GET", "/v1/voices")[1])
+        assert voices["default"] == health["default_voice"]
+        assert voices["default"] in [v["id"] for v in voices["voices"]]
+
+
+class TestAnUnknownVoiceIsRefusedRatherThanSilentlyDefaulted:
+    """⛔ `NS-04`'s fourth Acceptance, on both synthesis routes.
+
+    ⚠️ **It used to reach the engine**: a `502` on `/v1/speech`, and through
+    `/v1/jobs` one `failed` entry per segment with `reason: engine_failed` --
+    a correct report of the wrong question, after the round trips.
+    """
+
+    def test_speech_refuses_with_a_400_naming_what_is_permitted(self, service):
+        engine = FakeEngine()
+        request = service(engine)
+        response, body = request("POST", "/v1/speech",
+                                 {"text": "Prose.", "voice": NO_SUCH_VOICE})
+
+        assert response.status == 400
+        message = json.loads(body)["error"]
+        assert "voice must be one of" in message
+        assert "am_liam" in message and "af_bella" in message
+        assert engine.calls == []
+
+    def test_the_refusal_does_not_echo_the_voice_that_was_sent(self, service):
+        request = service(FakeEngine())
+        _, body = request("POST", "/v1/speech",
+                          {"text": "Prose.", "voice": NO_SUCH_VOICE})
+        assert NO_SUCH_VOICE not in json.loads(body)["error"]
+
+    def test_a_job_in_an_unknown_voice_is_a_400_for_the_WHOLE_job(self, service):
+        engine = FakeEngine()
+        request = service(engine)
+        response, body = request("POST", "/v1/jobs", {
+            "segments": [{"id": f"s{n}", "text": "Prose."} for n in range(4)],
+            "voice": NO_SUCH_VOICE,
+        })
+
+        # ⛔ A 400 and not a 200 with four failed entries: the voice is a
+        # property of the request, so nothing is attempted.
+        assert response.status == 400
+        assert "voice must be one of" in json.loads(body)["error"]
+        assert engine.calls == []
+
+    def test_a_KNOWN_voice_is_served(self, service):
+        """⚠️ The other direction: the gate must not refuse a real voice."""
+        engine = FakeEngine()
+        request = service(engine)
+        response, _ = request("POST", "/v1/speech",
+                              {"text": "Prose.", "voice": "af_bella"})
+        assert response.status == 200
+        assert {call["voice"] for call in engine.calls} == {"af_bella"}
+
+    def test_a_deployment_whose_DEFAULT_voice_is_unknown_refuses_to_start(
+        self, tmp_path
+    ):
+        """⛔ At startup, not on the first request. `build_server` is public
+        and an injected engine carries a catalogue the registry never saw."""
+        config = Config(artifact_dir=tmp_path, bind="127.0.0.1", port=0,
+                        voice=NO_SUCH_VOICE)
+        with pytest.raises(UnknownVoice):
+            build_server(config, engine=FakeEngine())
 
 
 def test_speech_returns_playable_audio_and_names_the_artifact(service):

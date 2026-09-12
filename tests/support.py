@@ -15,6 +15,17 @@ more constant when something needs it.
 from __future__ import annotations
 
 from narrate.engine import EngineIdentity
+from narrate.voices import Voice, VoiceCatalogue
+
+#: ⛔ A SMALL catalogue, deliberately, and not a copy of Kokoro's 68. A test
+#: double that mirrored the real adapter's list would quietly become a second
+#: declaration of it, and the two would drift. ⭐ What the suite needs from a
+#: catalogue is that it has members, a default, and something outside it.
+FAKE_VOICE_IDS = ("am_liam", "af_bella")
+
+#: ⛔ Not in `FAKE_VOICE_IDS`, and used wherever a test needs a voice that is
+#: syntactically ordinary and genuinely unknown.
+NO_SUCH_VOICE = "zz_nobody"
 
 #: MPEG-1 Layer III, 128 kbit/s, 44.1 kHz, no padding, joint stereo.
 FRAME_SAMPLE_RATE = 44100
@@ -56,12 +67,18 @@ class FakeEngine:
     name = "fake"
 
     def __init__(self, per_chunk=None, fail_with=None, reachable_=True,
-                 profile="unknown", model="fake-1"):
+                 profile="unknown", model="fake-1", voices=FAKE_VOICE_IDS,
+                 default_voice=None):
         self._per_chunk = per_chunk if per_chunk is not None else mpeg_bytes(1)
         self._fail_with = fail_with
         self._reachable = reachable_
         self._profile = profile
         self._model = model
+        self._catalogue = VoiceCatalogue(
+            [Voice(id=v, name=v.title(), language="en-US", gender="unknown")
+             for v in voices],
+            default_voice or voices[0],
+        )
         self.calls = []
 
     def identity(self):
@@ -85,3 +102,7 @@ class FakeEngine:
 
     def reachable(self):
         return self._reachable
+
+    def voices(self):
+        """⭐ The fourth member of the adapter contract (NS-04)."""
+        return self._catalogue

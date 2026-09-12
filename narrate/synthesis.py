@@ -6,8 +6,16 @@ Five steps, in this order, and the order is the design:
    the store. ⭐ **A hit returns immediately and the engine is never called** --
    which is the whole of the idempotence this service promises, and the
    mechanism R10's audio carve-out names. ⛔ **The address covers `chunk_chars`
-   as well as the text, the voice and the format**, because step 1 below is
-   what the budget changes and steps 2-4 all follow from it.
+   and `engine_model` as well as the text, the voice and the format**, because
+   step 1 below is what the budget changes, steps 2-4 all follow from it, and
+   the model is what decides how the voice sounds.
+
+⛔ **`engine.identity()` IS READ BEFORE STEP 0 AND THAT ORDER IS LOAD-BEARING.**
+The model is part of the address, so it must be known before the address
+exists. ⭐ **The call is local** -- an adapter reports what its deployment
+declared and never asks the engine (`engine/base.py`) -- so reading it first
+costs nothing and, in particular, does not make a cache hit depend on the
+engine being reachable.
 1. **Split** the text into chunks (`narrate.chunking`), because a caller sends
    one text of any length and never stitches anything.
 2. **Synthesise** each chunk at the engine (`narrate.engine`), in order.
@@ -127,17 +135,19 @@ def synthesise(text, voice, fmt, engine, store, chunk_chars, media_types,
         permitted = ", ".join(SUPPORTED_FORMATS)
         raise UnsupportedFormat(f"format must be one of: {permitted}")
 
-    artifact_id = address_for(text, voice, fmt, chunk_chars)
+    # ⭐ Read BEFORE the address, because the model is part of it -- and
+    # before the first chunk, so every chunk of one artifact is attributed to
+    # the engine that actually started it. ⛔ A LOCAL call: an adapter reports
+    # what its deployment declared, so a cache hit still costs no round trip.
+    identity = engine.identity()
+
+    artifact_id = address_for(text, voice, fmt, chunk_chars, identity.model)
 
     hit = _from_store(artifact_id, store, media_types, keep_audio)
     if hit is not None:
         return hit
 
     chunks = chunk_text(text, chunk_chars)
-
-    # ⭐ Read BEFORE the first chunk, so every chunk of one artifact is
-    # attributed to the engine that actually started it.
-    identity = engine.identity()
 
     pieces = [engine.synthesize_chunk(chunk, voice, fmt) for chunk in chunks]
     audio = b"".join(pieces)

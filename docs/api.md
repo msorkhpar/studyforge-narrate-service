@@ -3,13 +3,19 @@
 <!-- ⚠️ This document is over the 400-line guidance a source module carries.
      Deliberate, and declared here rather than left to be noticed: an API
      reference is answered in one read or it is answered twice, and splitting
-     four routes across files makes a consumer open two of them to learn what
+     the routes across files makes a consumer open two of them to learn what
      one call returns. R11's own escape is written for CODE modules
      ("justified in the module's own docstring") and this is the nearest
      equivalent for a document. Every source and test module in this
-     repository is inside its limit. -->
+     repository is inside its limit.
 
-Version `0.1.0`, promise `provides: 2`. Four routes. Every request and
+     ⛔ NS-04 and NS-06 grew it again, and the growth was BOUNDED rather than
+     accepted: the voice catalogue is one route and belongs beside the four it
+     is used with, so it is here; the agent adapter is NOT HTTP and speaks a
+     different protocol to a different caller, so it is docs/agent.md and not
+     a sixth section of a document titled "the HTTP API". -->
+
+Version `0.1.0`, promise `provides: 3`. Five routes. Every request and
 response body is JSON except a synthesised artifact, which is audio.
 
 ⭐ **Read `provides` before you build against this.** It versions **the promise
@@ -56,8 +62,10 @@ curl -fsS http://127.0.0.1:8870/healthz
 {
   "status": "ok",
   "version": "0.1.0",
-  "provides": 2,
+  "provides": 3,
   "chunk_chars": 1800,
+  "default_voice": "am_liam",
+  "voices": 68,
   "engine_reachable": true,
   "formats": ["mp3"],
   "engine": "kokoro",
@@ -72,15 +80,78 @@ curl -fsS http://127.0.0.1:8870/healthz
 | `version` | the service's **build** version |
 | `provides` | ⭐ the version of the **promise** — the routes, the manifest's shape, and the cache's behaviour |
 | `chunk_chars` | ⛔ **this deployment's chunk budget, which is part of the content address.** Published because a caller that recomputes an address for itself cannot get a deployment setting from a constant |
+| `default_voice` | ⛔ **the voice used when a request names none, which is therefore part of that request's content address.** Same argument as `chunk_chars`, one row up |
+| `voices` | how many voices this deployment offers. The list is `GET /v1/voices` |
 | `engine` | the engine **family** deployed |
 | `engine_profile` | `cpu`, `gpu`, or `unknown`. ⚠️ **Declared by the deployment, never detected** — see *Profiles* below |
-| `engine_model` | the model the engine is asked for |
+| `engine_model` | ⛔ **the model the engine is asked for, and it is part of the content address** — it decides how a voice *sounds*. The engine **family** and the **profile** are deliberately not |
 | `engine_reachable` | ⚠️ **`false` does not fail the request.** A health endpoint that fails when the engine is down cannot report that the engine is down |
 | `formats` | what `POST /v1/speech` will accept as `format` |
 
 ⚠️ The engine probe has its own short timeout. Synthesis is legitimately slow
 and its timeout is measured in minutes; a health check that inherited that
 would hang for minutes reporting on an engine that is plainly not answering.
+
+---
+
+## `GET /v1/voices`
+
+What this deployment can speak, and which voice it uses when you name none.
+
+```bash
+curl -fsS http://127.0.0.1:8870/v1/voices
+```
+
+```json
+{
+  "provides": 3,
+  "engine": "kokoro",
+  "default": "am_liam",
+  "voices": [
+    {"id": "af_bella", "name": "Bella", "language": "en-US", "gender": "female"},
+    {"id": "am_liam",  "name": "Liam",  "language": "en-US", "gender": "male"}
+  ]
+}
+```
+
+⭐ **This route answers identically whether the engine is up or down**, and that
+is the point of it rather than a happy accident. The catalogue is **declared by
+the engine adapter, not fetched from the engine**: a live fetch would turn *"no
+such voice"* into *"try again later"* at exactly the moment a caller is trying
+to find out which voice to use.
+
+| field | |
+|---|---|
+| `id` | ⛔ **what you send.** The only one of the four that is in the content address |
+| `name` | a human name for a menu. ⚠️ Not unique and not an identifier |
+| `language` | a BCP-47 tag, or `unknown` |
+| `gender` | `female`, `male`, or `unknown` |
+
+⚠️ **`name`, `language` and `gender` are DERIVED from the id, not measured.**
+Kokoro names a voice `<language><gender>_<speaker>`; that convention is written
+down as a table in `narrate/engine/kokoro.py` and applied there, so you can
+check the derivation instead of trusting it. ⛔ **The ids themselves ARE a
+measurement** — `GET /v1/audio/voices` against the engine image
+`consuming.json` pins for the CPU profile, 68 of them.
+
+⚠️ **The cost of declaring rather than fetching, stated rather than hidden: the
+declaration can drift from the engine.** `python3 -m tools.reconcile_voices
+<engine-base-url>` compares the two against any running engine and exits
+non-zero when they disagree.
+
+### ⛔ Picking a voice, and what happens when you get it wrong
+
+| | |
+|---|---|
+| per **request** | the optional `voice` key on `POST /v1/speech` and on `POST /v1/jobs` |
+| per **deployment** | `NARRATE_VOICE`, which is what a request naming none gets |
+| an **unknown** id | ⛔ **`400`, naming what is permitted.** Never silently defaulted |
+| an unknown id on a **job** | ⛔ **`400` for the WHOLE job, before any segment is attempted.** A voice applies to every segment, so it is a property of the request |
+| a misspelled `NARRATE_VOICE` | ⛔ **the service refuses to start.** Not a deployment that comes up healthy and mis-serves everything |
+
+⛔ **A refusal names what is permitted and never echoes what you sent.** You
+already know what you sent; a message that quoted it would copy it into
+whatever log an operator pastes somewhere.
 
 ---
 
@@ -137,7 +208,7 @@ fetches artifacts and places them itself takes the id and comes back for it.
 
 | status | when | what you do |
 |---|---|---|
-| `400` | the body is not a JSON object; `text` is missing, not a string, or only whitespace; `voice` or `format` is not a string; `format` is not in the closed set | fix the request. The message **names what is permitted** |
+| `400` | the body is not a JSON object; `text` is missing, not a string, or only whitespace; `voice` or `format` is not a string; `format` is not in the closed set; ⛔ **`voice` is not one this deployment offers** | fix the request. The message **names what is permitted**. For an unknown voice, `GET /v1/voices` is the list |
 | `411` | no `Content-Length` | send one |
 | `413` | the declared body length exceeds 4 MiB | send less. Refused on the declared length, **before** the bytes are read |
 | `502` | the engine answered and the answer was not usable audio — an HTTP error from the engine, an empty response, or something that is not a decodable MPEG stream | look at the engine, not at your request |
@@ -406,10 +477,10 @@ store is exactly as you found it.
 
 ### ⭐ Synthesis is **idempotent**, because artifacts are content-addressed
 
-An artifact's id is `sha256` over the scheme's own name (`narrate-address-2`),
-the `format`, the `voice`, the **chunk budget** and the `text` — each
-length-prefixed, so no two different requests can be re-cut into the same
-digest. ⛔ **Re-submitting a segment whose inputs are unchanged synthesises
+An artifact's id is `sha256` over the scheme's own name (`narrate-address-3`),
+the `format`, the `voice`, the **chunk budget**, the **engine model** and the
+`text` — each length-prefixed, so no two different requests can be re-cut into
+the same digest. ⛔ **Re-submitting a segment whose inputs are unchanged synthesises
 nothing and returns the same address.** That is what makes incremental
 regeneration possible: change one segment's prose and one segment is
 re-synthesised.
@@ -423,6 +494,20 @@ audio that did not match the request, under an address asserting that it did.
 whole store**, including the many segments shorter than either budget whose
 audio would have been identical. Synthesising twice is the cheaper error than
 speaking the wrong words.
+
+⚠️ **`engine_model` is in the address for the same reason, and it was NOT there
+until `provides: 3`.** The model decides how a voice *sounds*, so swapping it
+used to keep every address while serving different audio — a corpus stayed
+"cached", every clip spoke in the new model's voice, and no count moved.
+⛔ **The engine FAMILY and the hardware PROFILE stay outside the address**, so
+moving between the CPU and GPU builds of one model still costs nothing; the
+three are separable precisely because the service reports them separately.
+
+> ⛔ **If you are upgrading from `provides: 2`: every address moves.**
+> `narrate-address-3` hashes a field version 2 did not, so a store filled under
+> 2 is a complete cache miss under 3 and a corpus is re-synthesised once. The
+> old artifacts are not deleted — nothing here is garbage-collected — so the
+> cost is disk and one run, not a migration.
 
 ⭐ **You can compute an address yourself, before you send anything.** Every
 manifest publishes `addressing` — including this deployment's `chunk_chars` —
@@ -484,8 +569,6 @@ against something half-present:
 
 | not here | where it goes |
 |---|---|
-| ⛔ **A voice catalogue** — what voices exist and how a corpus picks one | a later task. `voice` is passed through to the engine unvalidated; an unknown voice surfaces as a `502` |
-| ⛔ **The `voices` half of `consuming.json`** | the voice-catalogue task. ⭐ **The rest of the file is here**, and it names its own gap in `not_yet_declared` so you can tell "no voices" from "not written yet" |
 | ⛔ **Formats other than `mp3`** | an MPEG elementary stream is a run of independently decodable frames, so its chunks concatenate with no muxer. A container format cannot be joined that way. A half-supported format that produced a broken file for long input would be worse than a refusal |
 
 ---
@@ -502,7 +585,7 @@ All environment, no flags — so there is exactly one place a setting comes from
 | `NARRATE_BIND` | `127.0.0.1` | ⛔ loopback. See below |
 | `NARRATE_PORT` | `8870` | |
 | `NARRATE_ARTIFACT_DIR` | `artifacts` | relative to the working directory |
-| `NARRATE_VOICE` | `am_liam` | used when a request names none |
+| `NARRATE_VOICE` | `am_liam` | used when a request names none. ⛔ **Validated at startup**: a value outside `GET /v1/voices` refuses to start |
 | `NARRATE_CHUNK_CHARS` | `1800` | characters per chunk, minimum 64 |
 | `NARRATE_TIMEOUT_SECONDS` | `600` | per chunk. Synthesis runs at roughly a second per thousand characters |
 

@@ -256,7 +256,7 @@ CONTROLS = (
     Control(
         id="p08", what="consuming.json's provides drifts from narrate.PROVIDES",
         path="consuming.json",
-        anchor='"provides": 2,',
+        anchor='"provides": 3,',
         replacement='"provides": 1,',
         expects="test_it_carries_both_versions_and_they_are_not_the_same_question",
     ),
@@ -279,8 +279,8 @@ CONTROLS = (
     Control(
         id="p11", what="the declared address fields drift from the hashed ones",
         path="consuming.json",
-        anchor='"over": [\n        "format",\n        "voice",\n        "chunk_chars",\n        "text"\n      ],',
-        replacement='"over": [\n        "format",\n        "voice",\n        "text"\n      ],',
+        anchor='"over": [\n        "format",\n        "voice",\n        "chunk_chars",\n        "engine_model",\n        "text"\n      ],',
+        replacement='"over": [\n        "format",\n        "voice",\n        "chunk_chars",\n        "text"\n      ],',
         expects="test_the_declared_addressing_is_what_the_code_actually_hashes",
     ),
     # ⛔ The two below are the controls for `CTO-69/7` and `CTO-69/9`, and they
@@ -317,9 +317,37 @@ CONTROLS = (
     Control(
         id="p13", what="the chunk budget is dropped from the address",
         path="narrate/artifacts.py",
-        anchor="    for field in (ADDRESS_SCHEME, fmt, voice, str(chunk_chars), text):",
-        replacement="    for field in (ADDRESS_SCHEME, fmt, voice, text):",
+        anchor="    for field in (ADDRESS_SCHEME, fmt, voice, str(chunk_chars),\n"
+               "                  engine_model, text):",
+        replacement="    for field in (ADDRESS_SCHEME, fmt, voice,\n"
+                    "                  engine_model, text):",
         expects="test_the_CHUNK_BUDGET",
+    ),
+    # ⛔ NS-04 and NS-06. The first two plant this branch's two correctness
+    # claims; the third plants the one carried lesson `E13` states as an
+    # acceptance clause rather than as advice.
+    Control(
+        id="p16", what="the engine model is dropped from the address again",
+        path="narrate/artifacts.py",
+        anchor="    for field in (ADDRESS_SCHEME, fmt, voice, str(chunk_chars),\n"
+               "                  engine_model, text):",
+        replacement="    for field in (ADDRESS_SCHEME, fmt, voice,\n"
+                    "                  str(chunk_chars), text):",
+        expects="test_the_ENGINE_MODEL",
+    ),
+    Control(
+        id="p17", what="an unknown voice is accepted instead of refused",
+        path="narrate/jobs.py",
+        anchor="        catalogue.require(voice)",
+        replacement="        pass",
+        expects="test_an_unknown_voice_refuses_the_job_naming_what_is_permitted",
+    ),
+    Control(
+        id="p18", what="the agent adapter stops rebinding its protocol stream",
+        path="narrate/agent/protocol.py",
+        anchor="    sys.stdout = sys.stderr",
+        replacement="    pass",
+        expects="test_a_print_inside_the_synthesis_path_does_not_break_the_transport",
     ),
 )
 

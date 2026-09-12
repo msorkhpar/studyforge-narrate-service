@@ -1,10 +1,8 @@
 {
   "consuming_api": 1,
-  "provides": 2,
+  "provides": 3,
   "component": "narrate-service",
-  "not_yet_declared": [
-    "voices"
-  ],
+  "not_yet_declared": [],
   "service": {
     "image": "narrate-service:local",
     "built_from": "Dockerfile",
@@ -101,6 +99,20 @@
       }
     ]
   },
+  "agent": {
+    "optional": true,
+    "purpose": "an agent-callable adapter for one-off narration outside a corpus build",
+    "command": ["python3", "-m", "narrate", "agent"],
+    "transport": "stdio, newline-delimited JSON-RPC 2.0 -- one compact JSON object per line. NOT the LSP-style Content-Length header framing",
+    "tools": ["synthesize", "narrate_batch", "voices"],
+    "started_by_any_compose_profile": false,
+    "in_the_container_command": false,
+    "reads_the_same_environment_as_serve": true,
+    "shares_the_store": false,
+    "shares_the_store_note": "by default the adapter and a deployment do NOT share an artifact directory: the container sets NARRATE_ARTIFACT_DIR to its volume mount and the adapter on a host takes the relative default. Pointing them at one directory makes the adapter a SECOND WRITING PROCESS, and the store publish lock is in-process -- two processes racing one address can publish one synthesis audio beside the other record. Both halves stay complete and valid; only the byte count and duration would belong to the twin",
+    "gate": "the personal-data gate is the CALLER's and there is no framework client between an agent and the engine here. Every tool description states it",
+    "documented_in": "docs/agent.md"
+  },
   "profiles": {
     "default": "cpu",
     "cpu": {
@@ -150,6 +162,12 @@
         "response": "application/json"
       },
       {
+        "method": "GET",
+        "path": "/v1/voices",
+        "response": "application/json",
+        "note": "the voice catalogue and this deployment default voice. Answers identically whether the engine is up or down: the catalogue is declared by the engine adapter, never fetched"
+      },
+      {
         "method": "POST",
         "path": "/v1/speech",
         "request": "application/json",
@@ -172,6 +190,17 @@
       "mp3"
     ],
     "max_request_bytes": 4194304,
+    "address_bearing_settings": {
+      "fields": [
+        "chunk_chars",
+        "engine_model"
+      ],
+      "published_on": [
+        "GET /healthz",
+        "the addressing block of every manifest"
+      ],
+      "note": "deployment settings that are part of the content address. A caller that recomputes an address must read them from one of those two places"
+    },
     "engine_reported_on": [
       "/healthz",
       "POST /v1/speech",
@@ -205,31 +234,120 @@
     "cache": {
       "content_addressed": true,
       "idempotent": true,
-      "scheme": "narrate-address-2",
+      "scheme": "narrate-address-3",
       "hash": "sha256",
       "over": [
         "format",
         "voice",
         "chunk_chars",
+        "engine_model",
         "text"
       ],
       "encoding": "utf-8, each field length-prefixed as '<bytes>:' before the bytes; chunk_chars as its decimal digits",
       "order": [
-        "narrate-address-2",
+        "narrate-address-3",
         "format",
         "voice",
         "chunk_chars",
+        "engine_model",
         "text"
       ],
       "engine_in_address": false,
-      "note": "the engine PROFILE is deliberately not in the address, so moving between the cpu and gpu builds of one model does not re-synthesise a corpus; a cached artifact reports the engine that actually made it. WARNING: that argument does not cover a MODEL change, which is audio-changing and is also outside the address -- swapping the model keeps every address and serves different audio. Open, routed to the voice-catalogue task. chunk_chars IS in the address because it decides where the text is cut and each chunk is a separate engine request, so a different budget is different bytes at every join; its value for this deployment is published on GET /healthz and in every manifest",
+      "note": "the engine FAMILY and the hardware PROFILE are deliberately not in the address, so moving between the cpu and gpu builds of one model does not re-synthesise a corpus, and a cached artifact reports the engine that actually made it. The engine MODEL is IN the address as of narrate-address-3 (NS-04, closing CTO-69/19): it decides how a voice sounds, and while it was outside, swapping the model kept every address and served different audio. chunk_chars is in the address because it decides where the text is cut and each chunk is a separate engine request, so a different budget is different bytes at every join. Both chunk_chars and engine_model are DEPLOYMENT settings: their values for this deployment are published on GET /healthz and in the addressing block of every manifest, so a caller recomputing an address reads them there and never from a constant",
       "chunk_chars_is_a_deployment_setting": true,
-      "engine_model_in_address": false
+      "engine_model_in_address": true
     },
     "caller_obligations": [
       "gate personal data out of the text before the request; this service never inspects it",
       "place artifacts yourself; this service never writes into a caller's tree",
-      "read the manifest's counts: a well-formed job answers 200 whatever its segments did"
+      "read the manifest's counts: a well-formed job answers 200 whatever its segments did",
+      "pick a voice from the voices block or from GET /v1/voices: an unknown id is a 400 for the whole request, never a silent default"
+    ]
+  },
+  "voices": {
+    "engine": "kokoro",
+    "default": "am_liam",
+    "count": 68,
+    "route": "GET /v1/voices",
+    "selection": "per request, the optional voice key on POST /v1/speech and on POST /v1/jobs; per deployment, NARRATE_VOICE, which is the value used when a request names none",
+    "unknown_voice": "refused with HTTP 400 naming what is permitted. For a job it refuses the WHOLE job before any segment is attempted. Never silently defaulted",
+    "in_the_content_address": true,
+    "declared_not_fetched": true,
+    "measured_from": {
+      "route": "GET /v1/audio/voices",
+      "engine_image": "ghcr.io/remsky/kokoro-fastapi-cpu:v0.8.2@sha256:8545e2a4ae8d040749a369a848236fcf768aabc3b5b7a89451afa6507101c59a",
+      "profile": "cpu",
+      "note": "the ids are a reading taken from that image. The name, language and gender of each are DERIVED from the id by the rule published in narrate/engine/kokoro.py and are not measured. The gpu image is the same upstream version and was NOT read; reconcile any running engine with python3 -m tools.reconcile_voices <engine-base-url>"
+    },
+    "catalogue": [
+      {"id": "af_alloy", "name": "Alloy", "language": "en-US", "gender": "female"},
+      {"id": "af_aoede", "name": "Aoede", "language": "en-US", "gender": "female"},
+      {"id": "af_bella", "name": "Bella", "language": "en-US", "gender": "female"},
+      {"id": "af_heart", "name": "Heart", "language": "en-US", "gender": "female"},
+      {"id": "af_jadzia", "name": "Jadzia", "language": "en-US", "gender": "female"},
+      {"id": "af_jessica", "name": "Jessica", "language": "en-US", "gender": "female"},
+      {"id": "af_kore", "name": "Kore", "language": "en-US", "gender": "female"},
+      {"id": "af_nicole", "name": "Nicole", "language": "en-US", "gender": "female"},
+      {"id": "af_nova", "name": "Nova", "language": "en-US", "gender": "female"},
+      {"id": "af_river", "name": "River", "language": "en-US", "gender": "female"},
+      {"id": "af_sarah", "name": "Sarah", "language": "en-US", "gender": "female"},
+      {"id": "af_sky", "name": "Sky", "language": "en-US", "gender": "female"},
+      {"id": "af_v0", "name": "Legacy (v0)", "language": "en-US", "gender": "female"},
+      {"id": "af_v0bella", "name": "Bella (v0)", "language": "en-US", "gender": "female"},
+      {"id": "af_v0irulan", "name": "Irulan (v0)", "language": "en-US", "gender": "female"},
+      {"id": "af_v0nicole", "name": "Nicole (v0)", "language": "en-US", "gender": "female"},
+      {"id": "af_v0sarah", "name": "Sarah (v0)", "language": "en-US", "gender": "female"},
+      {"id": "af_v0sky", "name": "Sky (v0)", "language": "en-US", "gender": "female"},
+      {"id": "am_adam", "name": "Adam", "language": "en-US", "gender": "male"},
+      {"id": "am_echo", "name": "Echo", "language": "en-US", "gender": "male"},
+      {"id": "am_eric", "name": "Eric", "language": "en-US", "gender": "male"},
+      {"id": "am_fenrir", "name": "Fenrir", "language": "en-US", "gender": "male"},
+      {"id": "am_liam", "name": "Liam", "language": "en-US", "gender": "male"},
+      {"id": "am_michael", "name": "Michael", "language": "en-US", "gender": "male"},
+      {"id": "am_onyx", "name": "Onyx", "language": "en-US", "gender": "male"},
+      {"id": "am_puck", "name": "Puck", "language": "en-US", "gender": "male"},
+      {"id": "am_santa", "name": "Santa", "language": "en-US", "gender": "male"},
+      {"id": "am_v0adam", "name": "Adam (v0)", "language": "en-US", "gender": "male"},
+      {"id": "am_v0gurney", "name": "Gurney (v0)", "language": "en-US", "gender": "male"},
+      {"id": "am_v0michael", "name": "Michael (v0)", "language": "en-US", "gender": "male"},
+      {"id": "bf_alice", "name": "Alice", "language": "en-GB", "gender": "female"},
+      {"id": "bf_emma", "name": "Emma", "language": "en-GB", "gender": "female"},
+      {"id": "bf_isabella", "name": "Isabella", "language": "en-GB", "gender": "female"},
+      {"id": "bf_lily", "name": "Lily", "language": "en-GB", "gender": "female"},
+      {"id": "bf_v0emma", "name": "Emma (v0)", "language": "en-GB", "gender": "female"},
+      {"id": "bf_v0isabella", "name": "Isabella (v0)", "language": "en-GB", "gender": "female"},
+      {"id": "bm_daniel", "name": "Daniel", "language": "en-GB", "gender": "male"},
+      {"id": "bm_fable", "name": "Fable", "language": "en-GB", "gender": "male"},
+      {"id": "bm_george", "name": "George", "language": "en-GB", "gender": "male"},
+      {"id": "bm_lewis", "name": "Lewis", "language": "en-GB", "gender": "male"},
+      {"id": "bm_v0george", "name": "George (v0)", "language": "en-GB", "gender": "male"},
+      {"id": "bm_v0lewis", "name": "Lewis (v0)", "language": "en-GB", "gender": "male"},
+      {"id": "ef_dora", "name": "Dora", "language": "es", "gender": "female"},
+      {"id": "em_alex", "name": "Alex", "language": "es", "gender": "male"},
+      {"id": "em_santa", "name": "Santa", "language": "es", "gender": "male"},
+      {"id": "ff_siwis", "name": "Siwis", "language": "fr-FR", "gender": "female"},
+      {"id": "hf_alpha", "name": "Alpha", "language": "hi", "gender": "female"},
+      {"id": "hf_beta", "name": "Beta", "language": "hi", "gender": "female"},
+      {"id": "hm_omega", "name": "Omega", "language": "hi", "gender": "male"},
+      {"id": "hm_psi", "name": "Psi", "language": "hi", "gender": "male"},
+      {"id": "if_sara", "name": "Sara", "language": "it", "gender": "female"},
+      {"id": "im_nicola", "name": "Nicola", "language": "it", "gender": "male"},
+      {"id": "jf_alpha", "name": "Alpha", "language": "ja", "gender": "female"},
+      {"id": "jf_gongitsune", "name": "Gongitsune", "language": "ja", "gender": "female"},
+      {"id": "jf_nezumi", "name": "Nezumi", "language": "ja", "gender": "female"},
+      {"id": "jf_tebukuro", "name": "Tebukuro", "language": "ja", "gender": "female"},
+      {"id": "jm_kumo", "name": "Kumo", "language": "ja", "gender": "male"},
+      {"id": "pf_dora", "name": "Dora", "language": "pt-BR", "gender": "female"},
+      {"id": "pm_alex", "name": "Alex", "language": "pt-BR", "gender": "male"},
+      {"id": "pm_santa", "name": "Santa", "language": "pt-BR", "gender": "male"},
+      {"id": "zf_xiaobei", "name": "Xiaobei", "language": "zh", "gender": "female"},
+      {"id": "zf_xiaoni", "name": "Xiaoni", "language": "zh", "gender": "female"},
+      {"id": "zf_xiaoxiao", "name": "Xiaoxiao", "language": "zh", "gender": "female"},
+      {"id": "zf_xiaoyi", "name": "Xiaoyi", "language": "zh", "gender": "female"},
+      {"id": "zm_yunjian", "name": "Yunjian", "language": "zh", "gender": "male"},
+      {"id": "zm_yunxi", "name": "Yunxi", "language": "zh", "gender": "male"},
+      {"id": "zm_yunxia", "name": "Yunxia", "language": "zh", "gender": "male"},
+      {"id": "zm_yunyang", "name": "Yunyang", "language": "zh", "gender": "male"}
     ]
   }
 }

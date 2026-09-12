@@ -53,6 +53,7 @@ from .artifacts import ADDRESS_FIELDS, ADDRESS_SCHEME
 from .config import SUPPORTED_FORMATS
 from .engine import EngineError, EngineUnavailable
 from .synthesis import UnsupportedFormat, synthesise
+from .voices import UnknownVoice
 
 #: Every status a segment entry can carry. ⛔ A closed set: `consuming.json`
 #: declares it and a test asserts the two are the same list, so a status added
@@ -74,15 +75,16 @@ ADDRESSING = {
 }
 
 
-def addressing(chunk_chars):
-    """`ADDRESSING` plus THIS deployment's chunk budget.
+def addressing(chunk_chars, engine_model):
+    """`ADDRESSING` plus THIS deployment's two address-bearing settings.
 
-    ⛔ **The budget is part of the address and is a deployment setting**, so a
-    caller that wants to recompute an address before submitting needs its
-    value and cannot get it from a constant. Publishing the recipe without it
-    would be publishing a recipe nobody can follow.
+    ⛔ **The chunk budget and the engine model are both part of the address and
+    both are deployment settings**, so a caller that wants to recompute an
+    address before submitting needs their values and cannot get either from a
+    constant. Publishing the recipe without them would be publishing a recipe
+    nobody can follow.
     """
-    return dict(ADDRESSING, chunk_chars=chunk_chars)
+    return dict(ADDRESSING, chunk_chars=chunk_chars, engine_model=engine_model)
 
 #: ⛔ A closed pattern for a caller's own segment id. It never reaches the
 #: filesystem -- the artifact id does, and that is minted here -- but it is
@@ -118,13 +120,21 @@ class Job:
     fmt: str
 
 
-def parse_job(request, default_voice):
+def parse_job(request, default_voice, catalogue):
     """A `Job` from a decoded JSON request body, or raise `InvalidJob`.
 
     ⛔ **Every refusal names what is PERMITTED and never echoes the text.** A
     message quoting a segment's prose would write it into whatever log the
     operator pastes somewhere, which is the disclosure the gate exists to
     prevent -- by a slower route.
+
+    ⛔ **`catalogue` IS REQUIRED AND HAS NO DEFAULT, DELIBERATELY** (NS-04). An
+    optional validator is a validator that is off wherever somebody forgot it,
+    and this one decides whether a job of three thousand segments is refused
+    in a millisecond or attempted three thousand times. ⭐ **Before it existed
+    an unknown voice reached the engine and came back as one `failed` entry
+    PER SEGMENT** with `reason: engine_failed` -- the correct report of the
+    wrong question.
     """
     if not isinstance(request, dict):
         raise InvalidJob("body must be a JSON object")
@@ -140,6 +150,13 @@ def parse_job(request, default_voice):
     voice = request.get("voice") or default_voice
     if not isinstance(voice, str):
         raise InvalidJob("voice must be a string")
+    try:
+        # ⛔ The WHOLE job, before any segment is attempted. A voice applies to
+        # every segment, so an unknown one is a property of the request and not
+        # of any one segment -- a 400, never three thousand 502s.
+        catalogue.require(voice)
+    except UnknownVoice as exc:
+        raise InvalidJob(str(exc)) from None
     fmt = request.get("format") or SUPPORTED_FORMATS[0]
     if not isinstance(fmt, str):
         raise InvalidJob("format must be a string")
@@ -182,6 +199,10 @@ def run_job(job, engine, store, chunk_chars, media_types, provides):
     ⛔ Does not raise for a segment's failure: a failure is an entry in the
     manifest. It raises only what a programming error would raise.
     """
+    # ⛔ Read ONCE for the whole job, and it is the value the manifest's
+    # `addressing` block publishes. A per-segment read would let a redeployment
+    # mid-job publish a recipe that reproduces only some of the addresses.
+    engine_model = engine.identity().model
     entries = []
     halted = None
     for segment in job.segments:
@@ -192,7 +213,7 @@ def run_job(job, engine, store, chunk_chars, media_types, provides):
             segment, job, engine, store, chunk_chars, media_types
         )
         entries.append(entry)
-    return _manifest(job, entries, provides, chunk_chars)
+    return _manifest(job, entries, provides, chunk_chars, engine_model)
 
 
 def _run_segment(segment, job, engine, store, chunk_chars, media_types):
@@ -241,7 +262,7 @@ def _skipped(segment, reason):
     }
 
 
-def _manifest(job, entries, provides, chunk_chars):
+def _manifest(job, entries, provides, chunk_chars, engine_model):
     counts = {status: 0 for status in SEGMENT_STATUSES}
     for entry in entries:
         counts[entry["status"]] += 1
@@ -253,7 +274,7 @@ def _manifest(job, entries, provides, chunk_chars):
         "provides": provides,
         "voice": job.voice,
         "format": job.fmt,
-        "addressing": addressing(chunk_chars),
+        "addressing": addressing(chunk_chars, engine_model),
         "counts": dict(counts, total=len(entries)),
         "ok": counts["failed"] == 0 and counts["skipped"] == 0,
         "segments": entries,

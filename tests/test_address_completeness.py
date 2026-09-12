@@ -27,16 +27,24 @@ world.
 ⚠️ **The list below is HAND-ENUMERATED and derives nothing from the code**, so a
 newly added audio-changing input is invisible to it — which is the failure it
 was written to prevent, one level up (`CTO-69/19`). ⛔ **It is a checklist of
-four known inputs, not a universal**, and the class is named accordingly.
+the inputs NAMED IN IT, not a universal**, and the class is named
+accordingly. ⚠️ **It was a checklist of four and NS-04 made it six** by closing
+the gap the next paragraph used to describe -- the list growing by hand, which
+is exactly the weakness it declares.
 
-⛔ **The known gap, stated rather than left to be found: the ENGINE MODEL is an
-audio-changing input and it is NOT in the address.** `consuming.json` argues the
-engine's exclusion for *"the cpu and gpu profiles of one model"* — ⚠️ **which is
-not the model-change case at all.** A deployment that swaps the model keeps
-every address and serves audio in a different voice. ⭐ **Routed to `NS-04`,
-which owns voices and will touch this seam**; the honest remedy may be to record
-the model in the address, or to declare the exclusion and make a model change a
-deliberate store reset.
+⭐ **THE GAP THIS MODULE NAMED IS CLOSED, AND ITS CASE IS NOW ONE OF THE
+ENUMERATED FOUR.** The previous version read: *"the ENGINE MODEL is an
+audio-changing input and it is NOT in the address ... routed to `NS-04`, which
+owns voices and will touch this seam"*. ⛔ **`NS-04` took the first of the two
+remedies it offered: the model is hashed in** (`narrate.artifacts`,
+`ADDRESS_SCHEME` `narrate-address-3`), and `test_the_ENGINE_MODEL` below is
+driven from the synthesis path like every other case here.
+
+⚠️ **The ENGINE FAMILY and the hardware PROFILE remain outside the address and
+that is still correct** -- a move between the CPU and GPU builds of one model
+must not re-synthesise a corpus (`NS-03`). ⛔ **Neither of them is an
+audio-changing input in the sense this module tests**, and
+`TestTheProducedBytesAreNotInTheAddress` is the assertion that says so.
 """
 
 from __future__ import annotations
@@ -81,6 +89,10 @@ def run(text, tmp_path, voice="am_liam", chunk_chars=1800, engine=None):
 class TestEachEnumeratedInputChangesTheAddress:
     """⛔ One case per input NAMED HERE — not a universal. See the module head.
 
+    ⚠️ **Two cases below assert an input is NOT in the address**, and they are
+    in this class deliberately: *which inputs move the address* is not
+    answered by the positives alone.
+
     ⭐ Each case asserts BOTH halves. Asserting only that the addresses differ
     would pass for an input that changes nothing, which is a different bug and
     an equally silent one.
@@ -107,8 +119,51 @@ class TestEachEnumeratedInputChangesTheAddress:
         """⚠️ `SUPPORTED_FORMATS` has one member, so this is asserted on the
         minter directly. A second format would be different bytes and the
         store keeps one file per address."""
-        assert (address_for(LONG, "am_liam", "mp3", 1800)
-                != address_for(LONG, "am_liam", "wav", 1800))
+        assert (address_for(LONG, "am_liam", "mp3", 1800, "fake-1")
+                != address_for(LONG, "am_liam", "wav", 1800, "fake-1"))
+
+    def test_the_ENGINE_MODEL(self, tmp_path):
+        """⛔ The second one that was missing (`CTO-69/19`, closed by NS-04).
+
+        The model decides how a voice sounds, so two models are two different
+        byte-streams for one request. ⭐ **Driven from the synthesis path**: the
+        two fakes are given genuinely different audio for the same text, which
+        is what a model change actually is, and the address has to move with
+        it.
+
+        ⚠️ **The precondition is asserted first.** Without it this case would
+        pass for a model change that produced identical audio, which is a
+        different bug and an equally quiet one.
+        """
+        one = run(SHORT, tmp_path / "a",
+                  engine=FakeEngine(per_chunk=mpeg_bytes(3), model="first"))
+        two = run(SHORT, tmp_path / "b",
+                  engine=FakeEngine(per_chunk=mpeg_bytes(7), model="second"))
+
+        assert one.identity.model != two.identity.model
+        assert one.audio != two.audio, (
+            "the two models produced identical audio, so this case proves "
+            "nothing about an audio-changing input"
+        )
+        assert one.artifact_id != two.artifact_id, (
+            "swapping the model kept the address: a corpus would keep every "
+            "cached clip and quietly serve audio in a different voice"
+        )
+
+    def test_the_engine_FAMILY_and_PROFILE_are_deliberately_NOT_in_it(self, tmp_path):
+        """⛔ The other direction, and it is the property NS-03 built.
+
+        ⚠️ **Same model, different profile and different family**: the address
+        must NOT move, or a redeployment from the CPU build to the GPU build
+        of one model re-synthesises an entire corpus.
+        """
+        cpu = run(SHORT, tmp_path / "a",
+                  engine=FakeEngine(profile="cpu", model="one-model"))
+        gpu = run(SHORT, tmp_path / "b",
+                  engine=FakeEngine(profile="gpu", model="one-model"))
+
+        assert cpu.identity.profile != gpu.identity.profile
+        assert cpu.artifact_id == gpu.artifact_id
 
     def test_the_CHUNK_BUDGET(self, tmp_path):
         """⛔ The one that was missing, and the reason this module exists.
@@ -187,8 +242,9 @@ class TestTheDeclaredSetIsTheHashedSet:
         # ⚠️ `ADDRESS_FIELDS` names the WIRE spelling (`format`); the minter's
         # parameter is `fmt`. Mapped explicitly rather than assumed equal.
         parameter = {"format": "fmt"}.get(field, field)
-        base = {"text": LONG, "voice": "am_liam", "fmt": "mp3", "chunk_chars": 1800}
+        base = {"text": LONG, "voice": "am_liam", "fmt": "mp3",
+                "chunk_chars": 1800, "engine_model": "first"}
         other = {"text": LONG + " more", "voice": "af_bella",
-                 "fmt": "wav", "chunk_chars": 60}
+                 "fmt": "wav", "chunk_chars": 60, "engine_model": "second"}
         changed = dict(base, **{parameter: other[parameter]})
         assert address_for(**base) != address_for(**changed)

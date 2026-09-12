@@ -33,9 +33,17 @@ class _Almost:
                     else (lambda *a, **k: None))
 
 
-def test_the_contract_is_four_members_and_it_is_written_down():
-    assert ADAPTER_MEMBERS == ("name", "synthesize_chunk", "reachable", "identity")
-    assert ADAPTER_METHODS == ("synthesize_chunk", "reachable", "identity")
+def test_the_contract_is_five_members_and_it_is_written_down():
+    """⚠️ **It was four and NS-04 made it five.** `voices()` is an engine-family
+    fact, so it belongs behind this seam; the alternative was a server that
+    branched on which engine was deployed, which is what `registry.py` exists
+    to prevent. ⛔ **The refused POPULATION widened with it**: an object that
+    satisfied the four-member contract is refused today.
+    """
+    assert ADAPTER_MEMBERS == ("name", "synthesize_chunk", "reachable",
+                               "identity", "voices")
+    assert ADAPTER_METHODS == ("synthesize_chunk", "reachable", "identity",
+                               "voices")
 
 
 def test_a_conforming_engine_is_returned_unchanged():

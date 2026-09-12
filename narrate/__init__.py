@@ -37,8 +37,22 @@ __version__ = "0.1.0"
 #: without the promise changing, and the promise can change without a new build
 #: (spec R9, Ruling 5).
 #:
-#: ⭐ `2` because the batch job API and the content-addressed cache changed what
-#: a caller may rely on: `POST /v1/jobs` exists, an artifact id is now a content
-#: address, and re-submitting unchanged text synthesises nothing. `1` was the
+#: ⭐ `3` because `NS-04` and `NS-06` changed what a caller may rely on again,
+#: in all three of the things `provides` versions:
+#:
+#: * the ROUTES gained `GET /v1/voices`;
+#: * the CACHE's addressing scheme moved `narrate-address-2` ->
+#:   `narrate-address-3`, because the engine MODEL joined the hashed tuple
+#:   (`CTO-69/19`) -- ⛔ **every address a caller recorded under 2 is a miss
+#:   under 3**, which is the sharpest thing this number has ever had to carry;
+#:   and
+#: * a request naming an unknown voice is now a `400` rather than a `502` or a
+#:   per-segment `failed`, which is a change to what a caller must handle.
+#:
+#: ⚠️ **`2` MERGED**, unlike the churn inside it that `NS-02` argued about: it
+#: shipped to this repository's `main`, so a consumer can obtain it and `3` is
+#: the next number rather than a re-use.
+#:
+#: ⭐ `2` was the batch job API and the content-addressed cache; `1` was the
 #: promise of three routes and a random, non-idempotent id.
-PROVIDES = 2
+PROVIDES = 3

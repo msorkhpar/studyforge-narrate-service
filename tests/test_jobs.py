@@ -26,7 +26,12 @@ from narrate.jobs import (
     parse_job,
     run_job,
 )
-from tests.support import FakeEngine, mpeg_bytes
+from tests.support import NO_SUCH_VOICE, FakeEngine, mpeg_bytes
+
+#: The catalogue every direct `parse_job` call in this module validates
+#: against. ⭐ The same one `FakeEngine` carries, so a job parsed here and a job
+#: parsed through `submit` are judged by one list.
+CATALOGUE = FakeEngine().voices()
 
 
 def submit(segments, tmp_path, engine=None, voice=None, fmt=None, store=None):
@@ -38,7 +43,8 @@ def submit(segments, tmp_path, engine=None, voice=None, fmt=None, store=None):
         request["format"] = fmt
     engine = engine if engine is not None else FakeEngine()
     store = store if store is not None else ArtifactStore(tmp_path)
-    job = parse_job(request, default_voice="am_liam")
+    job = parse_job(request, default_voice="am_liam",
+                    catalogue=engine.voices())
     manifest = run_job(job, engine=engine, store=store, chunk_chars=1800,
                        media_types=FORMAT_MEDIA_TYPES, provides=PROVIDES)
     return manifest, engine, store
@@ -110,12 +116,16 @@ class TestAJobOfManySegments:
         manifest, _, _ = submit(FOUR, tmp_path)
         addressing = manifest["addressing"]
         assert addressing["hash"] == "sha256"
-        assert addressing["over"] == ["format", "voice", "chunk_chars", "text"]
-        # ⛔ The budget is part of the address and is a DEPLOYMENT setting, so
-        # the manifest has to carry its value or the recipe is unfollowable.
+        assert addressing["over"] == ["format", "voice", "chunk_chars",
+                                      "engine_model", "text"]
+        # ⛔ The budget and the model are both part of the address and both are
+        # DEPLOYMENT settings, so the manifest has to carry their values or
+        # the recipe is unfollowable.
         assert addressing["chunk_chars"] == 1800
+        assert addressing["engine_model"] == "fake-1"
         recomputed = address_for("The first speech unit.", "am_liam", "mp3",
-                                 addressing["chunk_chars"])
+                                 addressing["chunk_chars"],
+                                 addressing["engine_model"])
         assert entries(manifest)["u01-s001"]["artifact_id"] == recomputed
 
     def test_the_voice_and_format_are_job_wide_and_reach_every_segment(self, tmp_path):
@@ -160,18 +170,51 @@ class TestResubmittingAnUnchangedJob:
 
         `NS-03` named this exact hazard for this task: a redeployment must not
         make every cached artifact claim it was produced by the new engine.
+
+        ⚠️ **THE REDEPLOYMENT DRIVEN HERE CHANGED WHEN NS-04 LANDED, and the
+        change is the point rather than an adjustment to make a test pass.**
+        This case used to move the profile AND the model together; the model
+        is now part of the content address, so that pair is no longer a cache
+        hit at all and the case would have proved nothing about a hit. ⭐ **The
+        profile alone is the honest redeployment**: same model, different
+        hardware, one address, and the record still names the profile that
+        made the bytes. The model half is the test below.
         """
         store = ArtifactStore(tmp_path)
-        submit(FOUR, tmp_path, engine=FakeEngine(profile="gpu", model="first-model"),
+        submit(FOUR, tmp_path, engine=FakeEngine(profile="gpu", model="one-model"),
                store=store)
-        redeployed = FakeEngine(profile="cpu", model="second-model")
+        redeployed = FakeEngine(profile="cpu", model="one-model")
         manifest, _, _ = submit(FOUR, tmp_path, engine=redeployed, store=store)
 
         assert redeployed.calls == []
         for entry in manifest["segments"]:
             assert entry["status"] == "cached"
             assert entry["engine_profile"] == "gpu"
-            assert entry["engine_model"] == "first-model"
+            assert entry["engine_model"] == "one-model"
+
+    def test_a_MODEL_change_is_not_a_cache_hit_and_re_synthesises(self, tmp_path):
+        """⛔ NS-04, closing `CTO-69/19`. The other half of the test above.
+
+        ⚠️ **Before this, swapping the model kept every address**: a corpus
+        stayed "cached", every clip went on speaking in the old model's voice,
+        and no count moved. ⭐ **The engine is the instrument here** -- the
+        assertion is that it was CALLED, not that a status string says so.
+        """
+        store = ArtifactStore(tmp_path)
+        submit(FOUR, tmp_path, engine=FakeEngine(profile="cpu", model="one-model"),
+               store=store)
+        first, _, _ = submit(FOUR, tmp_path,
+                             engine=FakeEngine(profile="cpu", model="one-model"),
+                             store=store)
+        assert [e["status"] for e in first["segments"]] == ["cached"] * 4
+
+        retuned = FakeEngine(profile="cpu", model="another-model")
+        manifest, _, _ = submit(FOUR, tmp_path, engine=retuned, store=store)
+
+        assert len(retuned.calls) == 4
+        assert [e["status"] for e in manifest["segments"]] == ["synthesised"] * 4
+        assert ({e["artifact_id"] for e in manifest["segments"]}
+                & {e["artifact_id"] for e in first["segments"]}) == set()
 
     def test_two_segments_with_identical_text_share_one_synthesis(self, tmp_path):
         """⭐ Within ONE job: the second is a hit on what the first just stored."""
@@ -391,7 +434,8 @@ class TestARequestThatIsNotAJobNeverRuns:
         self, request_body, expected
     ):
         with pytest.raises(InvalidJob, match=expected):
-            parse_job(request_body, default_voice="am_liam")
+            parse_job(request_body, default_voice="am_liam",
+                      catalogue=CATALOGUE)
 
     def test_a_duplicate_id_is_refused_rather_than_reported_twice(self):
         """⛔ A manifest keyed by id cannot carry two outcomes for one key."""
@@ -399,19 +443,20 @@ class TestARequestThatIsNotAJobNeverRuns:
             parse_job({"segments": [
                 {"id": "s1", "text": "one"},
                 {"id": "s1", "text": "two"},
-            ]}, default_voice="am_liam")
+            ]}, default_voice="am_liam", catalogue=CATALOGUE)
 
     def test_too_many_segments_is_refused_naming_the_limit(self):
         with pytest.raises(InvalidJob, match=str(MAX_SEGMENTS)):
             parse_job({"segments": [
                 {"id": f"s{n}", "text": "x"} for n in range(MAX_SEGMENTS + 1)
-            ]}, default_voice="am_liam")
+            ]}, default_voice="am_liam", catalogue=CATALOGUE)
 
     def test_a_refusal_never_echoes_the_text(self):
         identifier = "profile-9876543210"
         with pytest.raises(InvalidJob) as raised:
             parse_job({"segments": [{"id": "s1", "text": identifier}],
-                       "format": "wav"}, default_voice="am_liam")
+                       "format": "wav"}, default_voice="am_liam",
+                      catalogue=CATALOGUE)
         assert identifier not in str(raised.value)
 
     def test_a_job_with_ONE_bad_segment_synthesises_NONE_of_the_good_ones(
@@ -441,6 +486,68 @@ class TestARequestThatIsNotAJobNeverRuns:
 
     def test_the_default_voice_is_used_when_the_job_names_none(self):
         job = parse_job({"segments": [{"id": "s1", "text": "x"}]},
-                        default_voice="am_liam")
+                        default_voice="am_liam", catalogue=CATALOGUE)
         assert job.voice == "am_liam"
         assert job.fmt == "mp3"
+
+
+class TestTheVoiceIsValidatedForTheWHOLEJob:
+    """⛔ NS-04. A voice applies to every segment, so an unknown one is a
+    property of the REQUEST -- refused once, before anything is attempted.
+
+    ⚠️ **Before this, an unknown voice reached the engine and came back as one
+    `failed` entry per segment** with `reason: engine_failed`: a correct report
+    of the wrong question, three thousand times, after three thousand round
+    trips.
+    """
+
+    def test_an_unknown_voice_refuses_the_job_naming_what_is_permitted(self):
+        with pytest.raises(InvalidJob) as raised:
+            parse_job({"segments": [{"id": "s1", "text": "Prose."}],
+                       "voice": NO_SUCH_VOICE},
+                      default_voice="am_liam", catalogue=CATALOGUE)
+        message = str(raised.value)
+        assert "voice must be one of" in message
+        for known in CATALOGUE.ids():
+            assert known in message
+
+    def test_the_refusal_does_not_echo_the_voice_that_was_sent(self):
+        """⛔ `config._one_of`'s rule: name what is permitted, never what came."""
+        with pytest.raises(InvalidJob) as raised:
+            parse_job({"segments": [{"id": "s1", "text": "Prose."}],
+                       "voice": NO_SUCH_VOICE},
+                      default_voice="am_liam", catalogue=CATALOGUE)
+        assert NO_SUCH_VOICE not in str(raised.value)
+
+    def test_NOTHING_is_synthesised_for_a_job_in_an_unknown_voice(self, tmp_path):
+        """⭐ The whole point, and asserted on the engine rather than the report.
+
+        ⛔ The bad voice is job-wide and the segments are perfectly good, so a
+        validator that ran per segment would synthesise none of them only if
+        it ran BEFORE the first one. That is what this measures.
+        """
+        engine = FakeEngine()
+        store = ArtifactStore(tmp_path)
+        with pytest.raises(InvalidJob):
+            submit(FOUR, tmp_path, engine=engine, store=store,
+                   voice=NO_SUCH_VOICE)
+        assert engine.calls == []
+        assert list(tmp_path.iterdir()) == []
+
+    def test_a_KNOWN_voice_that_is_not_the_default_is_accepted(self, tmp_path):
+        """⚠️ The other direction: the gate must not refuse a real voice."""
+        other = [v for v in CATALOGUE.ids() if v != "am_liam"][0]
+        manifest, engine, _ = submit(FOUR, tmp_path, voice=other)
+        assert manifest["voice"] == other
+        assert {call["voice"] for call in engine.calls} == {other}
+
+    def test_the_catalogue_has_NO_DEFAULT_so_it_cannot_be_left_off(self):
+        """⛔ An optional validator is off wherever somebody forgot it.
+
+        ⭐ This is the mechanical form of that decision: `parse_job` cannot be
+        called without a catalogue, so a future call site has to think about
+        which one it means rather than inheriting `None`.
+        """
+        with pytest.raises(TypeError):
+            parse_job({"segments": [{"id": "s1", "text": "x"}]},
+                      default_voice="am_liam")

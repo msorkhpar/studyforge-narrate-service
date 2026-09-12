@@ -34,15 +34,36 @@ the REQUEST**: the inputs that decide what is said and how.
 | `format` | different formats are different bytes, and the store keeps one file per address |
 | `voice` | changing a corpus's voice must invalidate that corpus's audio, and only that corpus's |
 | `chunk_chars` | ⛔ **the budget decides WHERE the text is cut, each chunk is a separate engine request, and the pieces are concatenated — so a different budget is different bytes at every join** |
+| `engine_model` | ⛔ **the model is what decides how a voice SOUNDS. Added by NS-04; see below** |
 | `text` | ⭐ **exactly as submitted. No normalisation. See below** |
 
-⛔ **THE ENGINE IS NOT IN THE ADDRESS**, and that is a decision rather than an
-omission. Putting it there would invalidate every cached artifact the moment a
-deployment moved between the CPU and GPU profiles of the *same* model -- a
-redeployment would re-synthesise a whole corpus. What is owed instead is
-honesty about what actually made a cached artifact, and that is what the record
-beside the bytes is for: a cache hit reports **the engine that produced it**,
-never the engine deployed now.
+⛔ **THE ENGINE FAMILY AND THE HARDWARE PROFILE ARE NOT IN THE ADDRESS; THE
+MODEL IS.** ⭐ **That split is `engine/base.py`'s own three-field split used for
+the thing it was written for**: the *profile* is the hardware question, the
+*family* decides whether a voice id means anything, and the *model* is *"the
+one that changes what the audio sounds like without either of the other two
+moving"*. Keeping the profile out is what stops a move between the CPU and GPU
+builds of one model re-synthesising a whole corpus -- the property `NS-03`
+exists for, and it is untouched.
+
+⛔ **THE MODEL WAS OUTSIDE THE ADDRESS AND THAT WAS A SILENT DEFECT** (`CTO-69/19`,
+`NS-02/14`, routed here). A deployment that swapped the model kept every
+address and served audio in a different voice: no test failed, no manifest
+changed, and the store's own claim -- *this address describes these bytes* --
+was simply false. ⚠️ **The alternative offered was to declare the exclusion and
+make a model change a deliberate store reset**; it was rejected because it puts
+a correctness property in an operator's memory, which is the failure
+`CTO-69/18` charged one round earlier. ⭐ **The cost of hashing it in is that
+retuning the model re-synthesises the store -- which is CORRECT, because the
+audio really is different.**
+
+⚠️ **`engine_model` is a DEPLOYMENT setting, like `chunk_chars`**, so a caller
+recomputing an address cannot read it from a constant. It is published on
+`GET /healthz`, in every manifest's `addressing`, and on every artifact.
+
+⭐ **What is still owed and is not solved by this:** a cache hit reports the
+engine that produced the bytes, read back from the record beside them, never
+the engine deployed now.
 
 ⛔ **The text is hashed exactly as submitted, and the alternative was
 considered.** `narrate.chunking` strips its input, so `" Hello "` and `"Hello"`
@@ -72,7 +93,7 @@ from pathlib import Path
 #: which is what stops a new scheme's address colliding with an old one's over
 #: different inputs. It is also published, so a caller can recompute an address
 #: itself and decide what to submit (`narrate.jobs`, and the manifest).
-ADDRESS_SCHEME = "narrate-address-2"
+ADDRESS_SCHEME = "narrate-address-3"
 
 #: The request fields the address covers, in the order they are hashed.
 #:
@@ -84,7 +105,14 @@ ADDRESS_SCHEME = "narrate-address-2"
 #: did. ⚠️ **The scheme number above moved with it**, per this module's own
 #: rule: a change to WHAT is hashed bumps it, so no address minted under the
 #: incomplete set can be mistaken for one minted under this one.
-ADDRESS_FIELDS = ("format", "voice", "chunk_chars", "text")
+#:
+#: ⛔ **`engine_model` is here for the same reason and it was the second real
+#: gap** (`CTO-69/19`, routed to `NS-04`). The model decides how a voice sounds,
+#: so swapping it while keeping every address served different audio under an
+#: address asserting it had not changed. ⚠️ **The scheme number moved again**:
+#: `narrate-address-2` -> `narrate-address-3`. ⭐ **The engine FAMILY and the
+#: hardware PROFILE stay out**, which is what keeps a CPU/GPU move free.
+ADDRESS_FIELDS = ("format", "voice", "chunk_chars", "engine_model", "text")
 
 #: `hashlib.sha256().hexdigest()` is 64 lowercase hexadecimal characters.
 ADDRESS_HEX_CHARS = 64
@@ -119,11 +147,16 @@ class UnknownArtifact(KeyError):
     """No artifact by that id. Nothing was read."""
 
 
-def address_for(text, voice, fmt, chunk_chars):
+def address_for(text, voice, fmt, chunk_chars, engine_model):
     """The content address of the artifact these inputs would produce.
 
-    Deterministic, and a pure function of its arguments: the same four values
+    Deterministic, and a pure function of its arguments: the same five values
     always give the same 64-character address, on any host and in any process.
+
+    ⛔ **`engine_model` is the deployment's model name, not its engine family
+    and not its hardware profile.** It is here because it changes the audio
+    (`CTO-69/19`); the other two are deliberately absent so that moving
+    between the CPU and GPU builds of one model costs nothing.
 
     ⚠️ **`chunk_chars` is included even though it changes nothing for a text
     shorter than the budget**, which is most segments. Retuning it therefore
@@ -136,7 +169,8 @@ def address_for(text, voice, fmt, chunk_chars):
     synthesise twice, never speak the wrong words.**
     """
     digest = hashlib.sha256()
-    for field in (ADDRESS_SCHEME, fmt, voice, str(chunk_chars), text):
+    for field in (ADDRESS_SCHEME, fmt, voice, str(chunk_chars),
+                  engine_model, text):
         encoded = field.encode("utf-8")
         # ⛔ Length-prefixed, so no choice of field values can be re-cut into a
         # different tuple with the same digest.

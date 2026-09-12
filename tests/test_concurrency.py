@@ -42,7 +42,8 @@ TIMEOUT = 10
 
 
 def an_address():
-    return address_for("Identical prose, sent twice.", "am_liam", "mp3", 1800)
+    return address_for("Identical prose, sent twice.", "am_liam", "mp3", 1800,
+                       "fake-1")
 
 
 def test_concurrent_writers_to_one_address_use_DIFFERENT_temporaries(tmp_path):

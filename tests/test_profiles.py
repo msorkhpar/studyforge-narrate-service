@@ -76,14 +76,28 @@ class TestTheFileItself:
         assert str(contract["provides"]) != narrate.__version__
         assert contract["provides"] != contract["consuming_api"]
 
-    def test_the_half_this_task_does_not_own_is_declared_absent(self, contract):
-        """⚠️ Voices are `NS-04`'s half. Absence is NAMED, not left to inference.
+    def test_the_LAST_declared_gap_is_closed_and_the_marker_is_EMPTY(self, contract):
+        """⭐ `NS-04` landed the half `NS-03` named absent, and this test is the
+        one that was written to fail on this branch.
 
-        A consumer that found no `voices` key and no marker could not tell
-        "this service has no voices" from "nobody has written that part yet".
+        ⚠️ **Its previous form asserted the absence**: `not_yet_declared ==
+        ["voices"]` and `"voices" not in contract`. ⛔ **Both halves flip
+        together or the file lies in one direction or the other** -- a
+        declared `voices` block beside a marker still calling it absent, or a
+        marker emptied with nothing behind it.
         """
-        assert contract["not_yet_declared"] == ["voices"]
-        assert "voices" not in contract
+        assert contract["not_yet_declared"] == []
+        assert "voices" in contract
+
+    def test_an_EMPTY_marker_still_means_nothing_is_owed(self, contract):
+        """⚠️ *Nothing is owed* and *nobody has looked* are different claims.
+
+        ⭐ The key survives as an empty list rather than being deleted,
+        because a consumer that found no key at all would be back to the
+        inference this marker exists to remove.
+        """
+        assert "not_yet_declared" in contract
+        assert contract["not_yet_declared"] == []
 
 
 class TestTheProfiles:
@@ -293,6 +307,36 @@ class TestTheBatchDeclarationAgreesWithTheCode:
         assert cache["order"] == jobs_module.ADDRESSING["order"]
         assert cache["encoding"] == jobs_module.ADDRESSING["encoding"]
 
+    def test_the_declared_VOICES_are_the_ones_the_adapter_offers(self, contract):
+        """⛔ The drift this file exists to catch, for `NS-04`'s half.
+
+        ⚠️ **Both directions.** A voice declared and not offered is a caller
+        told to use something that will be refused; a voice offered and not
+        declared is a real voice a consumer reading the file never learns
+        about.
+        """
+        from narrate.engine.kokoro import VOICE_IDS
+        declared = [v["id"] for v in contract["voices"]["catalogue"]]
+        assert tuple(declared) == VOICE_IDS
+        assert contract["voices"]["count"] == len(VOICE_IDS)
+
+    def test_the_declared_default_voice_is_the_configured_one(self, contract):
+        assert contract["voices"]["default"] == config_module.DEFAULT_VOICE
+        assert contract["voices"]["default"] in [
+            v["id"] for v in contract["voices"]["catalogue"]
+        ]
+
+    def test_every_declared_voice_carries_the_four_fields(self, contract):
+        """⭐ A consumer picks a voice per corpus, which is a LANGUAGE choice."""
+        for entry in contract["voices"]["catalogue"]:
+            assert sorted(entry) == ["gender", "id", "language", "name"]
+            assert entry["id"] and entry["name"]
+
+    def test_the_declaration_says_the_voice_is_in_the_address(self, contract):
+        """⛔ The two claims must agree or a consumer plans a corpus wrongly."""
+        assert contract["voices"]["in_the_content_address"] is True
+        assert "voice" in contract["api"]["cache"]["over"]
+
     def test_the_engine_is_declared_ABSENT_from_the_address(self, api):
         """⛔ A consumer plans a redeployment around this fact.
 
@@ -301,6 +345,20 @@ class TestTheBatchDeclarationAgreesWithTheCode:
         """
         assert api["cache"]["engine_in_address"] is False
         assert "engine" not in api["cache"]["over"]
+
+    def test_the_engine_MODEL_is_declared_PRESENT_and_really_is(self, api):
+        """⛔ The opposite claim to the one above, and they are not the same
+        question (`CTO-69/19`, closed by `NS-04`).
+
+        ⚠️ **`engine_in_address: false` was read as covering the model and it
+        never did.** The family and the hardware profile are outside the
+        address; the model is inside it, because it decides how a voice
+        sounds. A declaration that said only the first left a consumer to
+        infer the second, and the inference was wrong.
+        """
+        assert api["cache"]["engine_model_in_address"] is True
+        assert "engine_model" in api["cache"]["over"]
+        assert "engine_model" in ADDRESS_FIELDS
 
     def test_the_declared_idempotence_is_not_a_claim_the_code_contradicts(self, api):
         assert api["cache"]["content_addressed"] is True
@@ -315,6 +373,41 @@ class TestTheBatchDeclarationAgreesWithTheCode:
         """⛔ Ruling 330(b): the promise register, not a tenth `*_api`."""
         assert api["manifest"]["versioned_by"] == "provides"
         assert "manifest_api" not in api
+
+
+class TestTheOptionalAdapterIsDeclaredAsOptional:
+    """⛔ `NS-06`. A consumer must not read the Dockerfile to learn this (R19).
+
+    ⚠️ **The condition worth declaring is not that the adapter exists** -- it is
+    that it is a second WRITING PROCESS and does not share a store by default.
+    A consumer that pointed it at a live deployment's artifact directory would
+    be breaking a premise `narrate/artifacts.py` states and nothing enforces.
+    """
+
+    def test_the_declared_command_is_the_one_the_entry_point_accepts(self, contract):
+        from narrate.__main__ import COMMANDS
+        assert contract["agent"]["command"] == ["python3", "-m", "narrate", "agent"]
+        assert contract["agent"]["command"][-1] in COMMANDS
+
+    def test_the_declared_tools_are_the_ones_the_adapter_dispatches(self, contract):
+        from narrate.agent.tools import DISPATCH
+        assert contract["agent"]["tools"] == list(DISPATCH)
+
+    def test_it_is_declared_optional_and_the_deployment_agrees(self, contract):
+        assert contract["agent"]["optional"] is True
+        assert contract["agent"]["started_by_any_compose_profile"] is False
+        assert contract["agent"]["in_the_container_command"] is False
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        assert 'CMD ["python3", "-m", "narrate", "serve"]' in dockerfile
+
+    def test_the_store_sharing_condition_is_declared_and_not_left_to_inference(
+        self, contract
+    ):
+        """⚠️ Declared `false` BY DEFAULT, with the reason, rather than omitted."""
+        assert contract["agent"]["shares_the_store"] is False
+        note = contract["agent"]["shares_the_store_note"]
+        assert "SECOND WRITING PROCESS" in note
+        assert "in-process" in note
 
 
 class TestTheProvidesGateActuallyGates:
@@ -337,6 +430,7 @@ class TestTheProvidesGateActuallyGates:
     #: the same commit, or explain in the handoff why the change is invisible.
     PROMISED_ROUTES = (
         ("GET", "/healthz"),
+        ("GET", "/v1/voices"),
         ("POST", "/v1/speech"),
         ("POST", "/v1/jobs"),
         ("GET", "/v1/artifacts/{id}"),
@@ -344,10 +438,10 @@ class TestTheProvidesGateActuallyGates:
     PROMISED_MANIFEST_KEYS = (
         "addressing", "counts", "format", "ok", "provides", "segments", "voice",
     )
-    PROMISED_ADDRESS_SCHEME = "narrate-address-2"
+    PROMISED_ADDRESS_SCHEME = "narrate-address-3"
 
     def test_the_number_itself(self):
-        assert PROVIDES == 2
+        assert PROVIDES == 3
 
     def test_the_routes_are_the_ones_this_promise_names(self, contract):
         actual = tuple((r["method"], r["path"]) for r in contract["api"]["routes"])
@@ -361,10 +455,12 @@ class TestTheProvidesGateActuallyGates:
         from tests.support import FakeEngine
         import tempfile
 
+        engine = FakeEngine()
         with tempfile.TemporaryDirectory() as directory:
             job = parse_job({"segments": [{"id": "s1", "text": "Prose."}]},
-                            default_voice="am_liam")
-            manifest = run_job(job, engine=FakeEngine(),
+                            default_voice="am_liam",
+                            catalogue=engine.voices())
+            manifest = run_job(job, engine=engine,
                                store=ArtifactStore(directory), chunk_chars=1800,
                                media_types=FORMAT_MEDIA_TYPES, provides=PROVIDES)
         assert tuple(sorted(manifest)) == self.PROMISED_MANIFEST_KEYS
@@ -373,15 +469,24 @@ class TestTheProvidesGateActuallyGates:
         assert contract["api"]["cache"]["scheme"] == self.PROMISED_ADDRESS_SCHEME
         assert ADDRESS_SCHEME == self.PROMISED_ADDRESS_SCHEME
 
-    def test_promise_1_is_a_REAL_published_version_and_2_is_the_next_one(self):
-        """⚠️ Why `2` and not `3`, since the cache's behaviour changed twice.
+    def test_2_IS_a_published_version_now_so_3_is_the_next_one(self):
+        """⚠️ Why `3`, and why the previous round's argument does not apply.
 
-        ⛔ **`provides: 1` MERGED** — it shipped with the engine-adapter task —
-        so version 1 is a promise a consumer can actually obtain. ⭐ **Version 2
-        has never left this repository**, so the churn inside it is not a
-        version a consumer could have built against, and bumping to 3 would
-        leave a phantom 2 that nobody can name. ⚠️ The mechanical rule applies
-        BETWEEN published versions; this assertion exists so the reasoning is
-        in the tree rather than only in a handoff.
+        ⛔ **The reasoning this replaces was correct WHEN IT WAS WRITTEN and is
+        not correct now**, and that is the whole content of this test. It ran:
+        *"version 2 has never left this repository, so the churn inside it is
+        not a version a consumer could have built against, and bumping to 3
+        would leave a phantom 2 that nobody can name."*
+
+        ⭐ **Version 2 has since merged.** It is obtainable, so its promise is
+        real and the next change to any of the three pinned components is a
+        new number rather than more churn inside an unpublished one. ⚠️ **The
+        mechanical rule applies BETWEEN published versions, and 2 is now one
+        of them.**
+
+        ⛔ **The sharpest consequence, recorded here because it is the one a
+        consumer feels**: `narrate-address-3` re-addresses every artifact, so
+        a store filled under `provides: 2` is a complete cache miss under `3`
+        and a corpus is re-synthesised once.
         """
-        assert PROVIDES == 2
+        assert PROVIDES == 3

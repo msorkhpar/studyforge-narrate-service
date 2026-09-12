@@ -1,10 +1,19 @@
 """The engine adapter contract, written down and checked at startup.
 
-⭐ **Everything above this package speaks to three members and knows nothing
+⭐ **Everything above this package speaks to four members and knows nothing
 else about how audio is made**: `synthesize_chunk(text, voice, fmt)`,
-`reachable()`, and `identity()`. An adapter for a different speech engine is a
-new module in this package that provides those three; it is never a change to
-the API, the chunker, the store or the server.
+`reachable()`, `identity()` and `voices()`. An adapter for a different speech
+engine is a new module in this package that provides those four; it is never a
+change to the API, the chunker, the store or the server.
+
+⛔ **`voices()` IS THE FOURTH AND IT WAS ADDED RATHER THAN INHERITED** (NS-04).
+⚠️ **The contract widened, so the POPULATION this module's gate refuses widened
+with it**: an object that satisfied the three-member contract is refused today.
+That is deliberate and it is the cheap direction -- *which voices exist* is a
+fact about an engine family and about nothing else, so an adapter that could
+not answer it would push the question up into the server, where it would have
+to branch on which engine was deployed. ⭐ **That branch is exactly what
+`registry.py` exists to prevent.**
 
 ⛔ **It is a duck-typed contract with a RUNTIME GATE, deliberately, and not an
 abstract base class.** An ABC is enforced at subclass definition, which is the
@@ -22,6 +31,7 @@ missing member is a refusal at startup naming what is absent, rather than an
 | `synthesize_chunk(text, voice, fmt)` | bytes for ONE chunk. Raises `EngineError` on every failure. Never splits, never joins, never writes |
 | `reachable()` | whether the engine answers at all. ⛔ **Never raises** |
 | `identity()` | an `EngineIdentity` — what produced an artifact |
+| `voices()` | a `VoiceCatalogue` — what this engine can speak, and the deployment's default. ⛔ **Declared, never fetched**: see `narrate.voices` |
 
 ⚠️ **`identity()`'s `profile` is a DECLARATION, not a detection, and this is the
 one place a reader could be misled.** The service is on the far side of an HTTP
@@ -44,12 +54,12 @@ class NotAnEngine(TypeError):
     """An object offered as an engine does not satisfy the adapter contract."""
 
 
-#: The three members, plus the family name. Checked in this order so the
+#: The four members, plus the family name. Checked in this order so the
 #: message names the first thing missing rather than all of them at once.
-ADAPTER_MEMBERS = ("name", "synthesize_chunk", "reachable", "identity")
+ADAPTER_MEMBERS = ("name", "synthesize_chunk", "reachable", "identity", "voices")
 
 #: Members that must additionally be callable.
-ADAPTER_METHODS = ("synthesize_chunk", "reachable", "identity")
+ADAPTER_METHODS = ("synthesize_chunk", "reachable", "identity", "voices")
 
 
 @dataclass(frozen=True)

@@ -6,6 +6,11 @@ Turn text into speech, over HTTP, in a container. Standard library only.
 particular the two rules at the top, which are the ones a caller can get wrong
 in a way that cannot be undone.
 
+**[`docs/agent.md`](docs/agent.md) is the optional agent-callable adapter** —
+`python3 -m narrate agent`, a stdio tool protocol for one-off narration outside
+a corpus build. ⭐ **The service is complete without it**: no compose profile
+starts it and nothing the service ships imports it.
+
 ---
 
 ## What it is, and what it replaces
@@ -110,10 +115,15 @@ deployment said made it.
 [`consuming.json`](consuming.json) is the machine-readable contract: image,
 ports and their host binding, mounts, uid, every environment variable with its
 default, the healthcheck, both profiles with their requirements and the GPU
-one's opt-in, and — since `provides: 2` — the manifest's closed sets and the
-addressing scheme, which is exactly enough to compute an address yourself
-before you submit anything. It names its own gap (`not_yet_declared`) rather than leaving you
-to guess. Reading a Dockerfile is the first step toward forking it.
+one's opt-in, the manifest's closed sets, the addressing scheme — which is
+exactly enough to compute an address yourself before you submit anything — and,
+since `provides: 3`, **every voice this deployment can speak** and the optional
+agent adapter's condition for sharing a store.
+
+⭐ **`not_yet_declared` is now EMPTY, and the key is kept rather than deleted.**
+It named `voices` from the day the file was created until `NS-04` landed them;
+an empty list still says *nothing is owed*, which a missing key could not.
+Reading a Dockerfile is the first step toward forking it.
 
 ### Without the container
 
@@ -155,11 +165,14 @@ deployment is down.
 
 | | |
 |---|---|
-| `narrate/server.py` | the three routes |
+| `narrate/server.py` | the five routes |
 | `narrate/synthesis.py` | split → synthesise → verify → store, in that order |
 | `narrate/chunking.py` | where a long text is cut, and why there |
 | `narrate/artifacts.py` | the atomic write, and the content address |
 | `narrate/jobs.py` | the batch job, and what its manifest says |
+| `narrate/voices.py` | the voice catalogue: ⛔ **declared by the adapter, never fetched** |
+| `narrate/agent/` | ⭐ the OPTIONAL agent adapter. Nothing else imports it |
+| `tools/reconcile_voices.py` | the declared catalogue against a running engine |
 | `tools/plant.py` | ⛔ the negative-control harness: plant a defect, prove the suite catches it, restore |
 | `narrate/mpeg.py` | the gate that makes *playable* a checked claim, not a hope |
 | `narrate/engine/` | the engine seam — the contract, the registry, and Kokoro over HTTP |
@@ -167,7 +180,23 @@ deployment is down.
 
 ## What is not here yet
 
-A voice catalogue — which is also the one part of `consuming.json` that is
-still absent, and the file says so itself. It is named in
-[`docs/api.md`](docs/api.md) with where it goes, so that nothing is built
-against something absent — or, worse, against something half-present.
+⭐ **`consuming.json` is complete: `not_yet_declared` is empty.** The voice
+catalogue it named from the beginning is here, and the file now carries all 68
+voices with the reading that produced them.
+
+⚠️ **Two things a consumer should still know, and both are declared rather than
+absent:**
+
+- ⛔ **Formats other than `mp3`.** An MPEG elementary stream is a run of
+  independently decodable frames, so its chunks concatenate with no muxer; a
+  container format cannot be joined that way, and a half-supported format that
+  produced a broken file for long input would be worse than a refusal.
+- ⛔ **The store's publish lock is IN-PROCESS.** One serving process per
+  deployment is the shape this is run in. The optional agent adapter is a
+  second process, so pointing it at a live deployment's artifact directory is
+  a condition to read in [`docs/agent.md`](docs/agent.md) rather than a default
+  to assume — and `consuming.json` says `agent.shares_the_store: false`.
+
+Each is named in [`docs/api.md`](docs/api.md) or [`docs/agent.md`](docs/agent.md)
+with where it goes, so that nothing is built against something absent — or,
+worse, against something half-present.

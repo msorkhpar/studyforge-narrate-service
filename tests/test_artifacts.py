@@ -24,8 +24,9 @@ RECORD = {
 }
 
 
-def an_address(text="Some prose.", voice="am_liam", fmt="mp3", chunk_chars=1800):
-    return address_for(text, voice, fmt, chunk_chars)
+def an_address(text="Some prose.", voice="am_liam", fmt="mp3", chunk_chars=1800,
+               engine_model="kokoro"):
+    return address_for(text, voice, fmt, chunk_chars, engine_model)
 
 
 class TestTheAddressIsAFunctionOfTheRequest:
@@ -41,6 +42,9 @@ class TestTheAddressIsAFunctionOfTheRequest:
     @pytest.mark.parametrize("changed", [
         {"text": "Other prose."},
         {"voice": "af_bella"},
+        # ⛔ NS-04: the model decides how a voice sounds, so it is in the
+        # address. The engine FAMILY and the hardware PROFILE are not.
+        {"engine_model": "some-other-model"},
     ])
     def test_changing_an_input_changes_the_address(self, changed):
         assert an_address() != an_address(**changed)
@@ -58,33 +62,44 @@ class TestTheAddressIsAFunctionOfTheRequest:
         ⛔ **If this fails, the address scheme changed and `ADDRESS_SCHEME` must
         be bumped with it** -- see the module docstring's own rule.
         """
-        assert address_for("The first speech unit.", "am_liam", "mp3", 1800) == (
-            "344041840d9cb43fb30e60d4768c7dc8fe7b662fead7b119d5913713eb44b450"
+        assert address_for("The first speech unit.", "am_liam", "mp3", 1800,
+                           "kokoro") == (
+            "63d84579ec58153ac099a6002625f0bfa86bc4f8ab3ddc0fb7df8a1361096a80"
         )
 
     def test_the_fields_are_length_prefixed_so_they_cannot_be_recut(self):
         """⛔ The classic collision, asserted rather than argued.
 
-        ⚠️ **THE INPUTS ARE LOAD-BEARING AND THIS TEST WENT VACUOUS ONCE.** Its
-        original pair -- `voice="a", text="bc"` against `voice="ab", text="c"`
-        -- collided only while `voice` and `text` were adjacent in the hashed
-        order. Inserting `chunk_chars` between them separated the two and the
-        test then passed with the length prefixing REMOVED, which the committed
-        control `p09` caught by firing on the wrong tests.
+        ⚠️ **THE INPUTS ARE LOAD-BEARING AND THIS TEST HAS GONE VACUOUS ONCE
+        AND BEEN RE-AIMED TWICE.** Its original pair -- `voice="a", text="bc"`
+        against `voice="ab", text="c"` -- collided only while `voice` and
+        `text` were adjacent in the hashed order. Inserting `chunk_chars`
+        between them separated the two and the test then passed with the
+        length prefixing REMOVED, which the committed control `p09` caught by
+        firing on the wrong tests.
 
-        ⭐ **So the collision is now ASSERTED rather than assumed**: the first
+        ⛔ **NS-04 inserted `engine_model` between `chunk_chars` and `text` and
+        separated the SECOND pair the same way**, which is precisely what the
+        warning above predicted. ⭐ **The pair now collides on the newly
+        adjacent fields, `engine_model` and `text`** -- so the assertion tracks
+        whichever boundary the current order actually has.
+
+        ⭐ **The collision is ASSERTED rather than assumed**: the first
         assertion pins that these inputs really do share one naive
         concatenation, and it fails loudly if a future field order separates
         them again. Only then does the second assertion mean anything.
         """
-        first = {"text": "0bc", "voice": "a", "fmt": "mp3", "chunk_chars": 1800}
-        second = {"text": "bc", "voice": "a1", "fmt": "mp3", "chunk_chars": 8000}
+        first = {"text": "0bc", "voice": "a", "fmt": "mp3", "chunk_chars": 1800,
+                 "engine_model": "m"}
+        second = {"text": "bc", "voice": "a", "fmt": "mp3", "chunk_chars": 1800,
+                  "engine_model": "m0"}
 
         def naive(fields):
             """What an unprefixed digest would be fed."""
             return "".join([
                 ADDRESS_SCHEME, fields["fmt"], fields["voice"],
-                str(fields["chunk_chars"]), fields["text"],
+                str(fields["chunk_chars"]), fields["engine_model"],
+                fields["text"],
             ])
 
         assert naive(first) == naive(second), (

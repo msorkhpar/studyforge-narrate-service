@@ -1,9 +1,17 @@
-"""The HTTP surface: four routes, on `http.server`, standard library only.
+"""The HTTP surface: five routes, on `http.server`, standard library only.
 
     GET  /healthz                 is the service up, and is its engine up
+    GET  /v1/voices               what this deployment can speak, and its default
     POST /v1/speech               synthesise one text, get one artifact back
     POST /v1/jobs                 synthesise many keyed segments, get a manifest
     GET  /v1/artifacts/<id>       fetch a finished artifact again
+
+⛔ **AN UNKNOWN VOICE IS A `400` ON BOTH SYNTHESIS ROUTES, AND FOR A JOB IT IS
+THE WHOLE JOB** (NS-04). A voice applies to every segment, so it is a property
+of the request rather than of any one segment: refusing it before anything runs
+turns three thousand engine round trips into one refusal that names what is
+permitted. ⭐ **`GET /v1/voices` is the answer to that refusal**, and it needs no
+running engine -- the catalogue is declared by the adapter, never fetched.
 
 ⭐ **Why `POST /v1/speech` returns the audio *and* keeps it.** A caller that
 wants one file gets it in one round trip, with `curl -o` and nothing else. A
@@ -42,6 +50,7 @@ from .config import FORMAT_MEDIA_TYPES, SUPPORTED_FORMATS
 from .engine import EngineError, EngineUnavailable, build_engine, check_engine
 from .jobs import InvalidJob, parse_job, run_job
 from .synthesis import UnsupportedFormat, synthesise
+from .voices import UnknownVoice
 
 #: Refuse a body larger than this before reading it. Synthesis is slow and a
 #: caller's text is prose; a request in the megabytes is a mistake or an abuse,
@@ -65,6 +74,8 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/healthz":
             return self._health()
+        if self.path == "/v1/voices":
+            return self._voices()
         if self.path.startswith(_ARTIFACT_PREFIX):
             return self._artifact(self.path[len(_ARTIFACT_PREFIX):])
         return self._error(HTTPStatus.NOT_FOUND, "no such route")
@@ -90,6 +101,12 @@ class _Handler(BaseHTTPRequestHandler):
             # caller that recomputes an address for itself cannot get it from
             # a constant. Published here and in every manifest.
             "chunk_chars": service.chunk_chars,
+            # ⛔ Part of the content address of every segment submitted
+            # WITHOUT a voice, and a deployment setting -- so the same
+            # argument as `chunk_chars`, one line up. A caller recomputing an
+            # address for a job that names no voice needs this value.
+            "default_voice": service.voice,
+            "voices": len(service.catalogue),
             "engine_reachable": service.engine.reachable(),
             "formats": list(SUPPORTED_FORMATS),
         }
@@ -98,6 +115,23 @@ class _Handler(BaseHTTPRequestHandler):
         # anything and compare them to what came back with an artifact.
         payload.update(service.engine.identity().as_dict())
         return self._json(HTTPStatus.OK, payload)
+
+    def _voices(self):
+        """What this deployment can speak. ⛔ Needs no engine and never fails.
+
+        ⭐ The catalogue is DECLARED by the adapter (`narrate.voices`), so this
+        route answers identically whether the engine is up or down -- which is
+        what makes it usable as the answer to a `400` that refused a voice.
+        """
+        service = self.server.narrate
+        return self._json(HTTPStatus.OK, {
+            "provides": PROVIDES,
+            "engine": service.engine.name,
+            # ⛔ ONE source for the default: the service resolved it at
+            # startup against this catalogue. See `build_server`.
+            "default": service.voice,
+            "voices": service.catalogue.listing(),
+        })
 
     def _artifact(self, artifact_id):
         service = self.server.narrate
@@ -126,6 +160,12 @@ class _Handler(BaseHTTPRequestHandler):
         voice = request.get("voice") or service.voice
         if not isinstance(voice, str):
             return self._error(HTTPStatus.BAD_REQUEST, "voice must be a string")
+        try:
+            # ⛔ Before the engine, so an unknown voice is the caller's error
+            # naming what is permitted -- not a 502 blaming the deployment.
+            service.catalogue.require(voice)
+        except UnknownVoice as exc:
+            return self._error(HTTPStatus.BAD_REQUEST, str(exc))
         fmt = request.get("format") or SUPPORTED_FORMATS[0]
         if not isinstance(fmt, str):
             return self._error(HTTPStatus.BAD_REQUEST, "format must be a string")
@@ -185,7 +225,8 @@ class _Handler(BaseHTTPRequestHandler):
             return self._error(HTTPStatus.BAD_REQUEST, "body must be JSON")
 
         try:
-            job = parse_job(request, default_voice=service.voice)
+            job = parse_job(request, default_voice=service.voice,
+                            catalogue=service.catalogue)
         except InvalidJob as exc:
             return self._error(HTTPStatus.BAD_REQUEST, str(exc))
 
@@ -248,11 +289,13 @@ class _Handler(BaseHTTPRequestHandler):
 class _Service:
     """What every request needs, built once."""
 
-    def __init__(self, engine, store, voice, chunk_chars, log=None):
+    def __init__(self, engine, store, voice, chunk_chars, catalogue, log=None):
         self.engine = engine
         self.store = store
+        #: ⛔ Resolved at startup and already checked against `catalogue`.
         self.voice = voice
         self.chunk_chars = chunk_chars
+        self.catalogue = catalogue
         self._log = log
 
     def log(self, line):
@@ -276,6 +319,13 @@ def build_server(config, engine=None, log=None):
 
     `engine` is injectable so the suite can exercise every route without a
     running engine and without a GPU.
+
+    ⛔ **Raises `UnknownVoice` if `config.voice` is not one the engine offers.**
+    At startup, naming what is permitted -- because a deployment whose
+    `NARRATE_VOICE` is misspelled would otherwise come up healthy and then fail
+    or mis-serve every request that omitted a voice. ⭐ **This is the one gate
+    that covers BOTH paths**: the registry checks it for a built engine, and an
+    injected one carries its own catalogue that the registry never saw.
     """
     if engine is None:
         engine = build_engine(config)
@@ -284,11 +334,14 @@ def build_server(config, engine=None, log=None):
         # is public; an object missing a member would otherwise surface as a
         # 500 on the first request rather than as a refusal to start.
         check_engine(engine)
+    catalogue = engine.voices()
+    catalogue.require(config.voice)
     service = _Service(
         engine=engine,
         store=ArtifactStore(config.artifact_dir),
         voice=config.voice,
         chunk_chars=config.chunk_chars,
+        catalogue=catalogue,
         log=log,
     )
     return NarrateServer((config.bind, config.port), service)
