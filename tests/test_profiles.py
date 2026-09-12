@@ -315,3 +315,73 @@ class TestTheBatchDeclarationAgreesWithTheCode:
         """⛔ Ruling 330(b): the promise register, not a tenth `*_api`."""
         assert api["manifest"]["versioned_by"] == "provides"
         assert "manifest_api" not in api
+
+
+class TestTheProvidesGateActuallyGates:
+    """⛔ `CTO-69/18`: a version field that does not move when its own
+    definition says it must is a gate that has stopped gating.
+
+    ⭐ **`provides` is defined in `docs/api.md` as the version of "the routes,
+    the manifest's shape, and the cache's behaviour".** ⚠️ **Nothing made that
+    mechanical** — it relied on whoever changed one of the three remembering
+    what the definition said, and the office that changed two of them did not.
+
+    ⛔ **So the three components are PINNED here beside the number.** A change
+    to any of them fails this class, which is the moment the bump question has
+    to be answered rather than remembered. ⭐ It does not decide the answer: a
+    taker may bump `provides` or argue the change is invisible to a consumer —
+    but not silently.
+    """
+
+    #: The observable promise at `provides == 2`. ⛔ Update WITH the bump, in
+    #: the same commit, or explain in the handoff why the change is invisible.
+    PROMISED_ROUTES = (
+        ("GET", "/healthz"),
+        ("POST", "/v1/speech"),
+        ("POST", "/v1/jobs"),
+        ("GET", "/v1/artifacts/{id}"),
+    )
+    PROMISED_MANIFEST_KEYS = (
+        "addressing", "counts", "format", "ok", "provides", "segments", "voice",
+    )
+    PROMISED_ADDRESS_SCHEME = "narrate-address-2"
+
+    def test_the_number_itself(self):
+        assert PROVIDES == 2
+
+    def test_the_routes_are_the_ones_this_promise_names(self, contract):
+        actual = tuple((r["method"], r["path"]) for r in contract["api"]["routes"])
+        assert actual == self.PROMISED_ROUTES
+
+    def test_the_manifest_shape_is_the_one_this_promise_names(self):
+        """⭐ Read from a real manifest, never from a second hand-kept list."""
+        from narrate.artifacts import ArtifactStore
+        from narrate.config import FORMAT_MEDIA_TYPES
+        from narrate.jobs import parse_job, run_job
+        from tests.support import FakeEngine
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            job = parse_job({"segments": [{"id": "s1", "text": "Prose."}]},
+                            default_voice="am_liam")
+            manifest = run_job(job, engine=FakeEngine(),
+                               store=ArtifactStore(directory), chunk_chars=1800,
+                               media_types=FORMAT_MEDIA_TYPES, provides=PROVIDES)
+        assert tuple(sorted(manifest)) == self.PROMISED_MANIFEST_KEYS
+
+    def test_the_cache_behaviour_is_the_one_this_promise_names(self, contract):
+        assert contract["api"]["cache"]["scheme"] == self.PROMISED_ADDRESS_SCHEME
+        assert ADDRESS_SCHEME == self.PROMISED_ADDRESS_SCHEME
+
+    def test_promise_1_is_a_REAL_published_version_and_2_is_the_next_one(self):
+        """⚠️ Why `2` and not `3`, since the cache's behaviour changed twice.
+
+        ⛔ **`provides: 1` MERGED** — it shipped with the engine-adapter task —
+        so version 1 is a promise a consumer can actually obtain. ⭐ **Version 2
+        has never left this repository**, so the churn inside it is not a
+        version a consumer could have built against, and bumping to 3 would
+        leave a phantom 2 that nobody can name. ⚠️ The mechanical rule applies
+        BETWEEN published versions; this assertion exists so the reasoning is
+        in the tree rather than only in a handoff.
+        """
+        assert PROVIDES == 2

@@ -149,7 +149,7 @@ class TestTheCommittedCatalogue:
     """⭐ The test that keeps the harness armed as the tree moves."""
 
     def test_there_is_at_least_one_control(self):
-        assert len(CONTROLS) >= 13
+        assert len(CONTROLS) >= 15
 
     def test_every_control_id_is_unique(self):
         assert len({control.id for control in CONTROLS}) == len(CONTROLS)

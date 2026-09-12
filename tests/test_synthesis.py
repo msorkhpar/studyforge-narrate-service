@@ -194,6 +194,9 @@ class TestTheArtifactRecordsWhatMadeIt:
 class _NullStore:
     """A store that never holds anything, so every lookup is a miss."""
 
+    def snapshot(self, artifact_id, with_audio=True):
+        return None, None
+
     def lookup(self, artifact_id):
         return None
 

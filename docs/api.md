@@ -459,13 +459,19 @@ service is threaded, so both writes really are concurrent.
 ⛔ **Each write stages to its own unique temporary in the destination's
 directory**, so a rename can only ever publish one complete synthesis — never a
 mixture of two, and never a truncated file. ⚠️ **A truncated mp3 plays**, which
-is why this is engineered against rather than argued about. The audio and the
-record beside it are published under one lock, so the two always describe the
-same artifact.
+is why this is engineered against rather than argued about.
 
-⚠️ **The residual, named rather than implied:** that lock is in-process. Two
-separate *processes* sharing one store can still leave a record from one
-synthesis beside its twin's audio — both complete and valid, with only the byte
+⭐ **An artifact and the record describing it are also published as one pair,
+and read back as one pair**, so what you are told about a file — its duration,
+its size, the engine that made it — always belongs to the file you get.
+
+⚠️ **The residual, corrected after review and now stated at its true width.**
+An earlier version of this page said the two *always* describe the same
+artifact and attributed the only gap to two separate processes. ⛔ **That was
+wrong: a single process reached it**, because writers were serialised and
+readers were not. Readers now take the same lock. **What remains is genuinely
+cross-process**: two serving processes sharing one store can still pair a
+record with its twin's audio — both complete and valid, with only the byte
 count and duration belonging to the twin. One serving process per deployment is
 the shape this service is built and run in.
 

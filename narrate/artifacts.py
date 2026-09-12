@@ -212,8 +212,38 @@ class ArtifactStore:
         except FileNotFoundError:
             raise UnknownArtifact("no artifact with that id") from None
 
+    def snapshot(self, artifact_id, with_audio=True):
+        """A record and its audio, read as ONE consistent pair, or `(None, None)`.
+
+        ⛔ **This exists because the publish lock alone was not enough, and the
+        gap was caller-visible** (`CTO-69/15`). `put` serialises WRITERS, but a
+        reader doing `lookup` and then `read` takes no lock at all: a writer
+        landing between those two calls leaves the reader holding the previous
+        record beside the new audio -- a `seconds` and a `bytes` belonging to a
+        different synthesis of the same request.
+
+        ⚠️ **One process reaches that, not two.** The window opens in exactly
+        the case this module calls EXPECTED: two callers with identical prose,
+        both missing the cache, both publishing.
+
+        ⭐ **So the pair is taken under the same stripe the writer holds**, and
+        `with_audio=False` still takes it -- the batch path reads only the
+        record, and an old record describing new audio is the same crossing
+        with the evidence removed.
+        """
+        with self._publish_lock(artifact_id):
+            record = self._lookup_unlocked(artifact_id)
+            if record is None:
+                return None, None
+            return record, (self.read(artifact_id) if with_audio else None)
+
     def lookup(self, artifact_id):
         """The record of a **complete** stored artifact, or `None`.
+
+        ⚠️ **A single question, answered without the lock.** Use `snapshot`
+        when the answer will be paired with the audio or with anything else
+        derived from it; see its docstring for why that distinction is not a
+        style preference.
 
         ⛔ This is the cache predicate, and it is deliberately strict: it
         answers with a record only when the audio exists *and* a record beside
@@ -223,6 +253,10 @@ class ArtifactStore:
         both files are rewritten. ⭐ **A miss costs one synthesis; a half-read
         record would cost a manifest that describes an artifact wrongly.**
         """
+        return self._lookup_unlocked(artifact_id)
+
+    def _lookup_unlocked(self, artifact_id):
+        """`lookup`'s body, for callers that already hold the stripe."""
         try:
             audio_path = self.path_for(artifact_id)
         except UnknownArtifact:
@@ -259,12 +293,17 @@ class ArtifactStore:
         `seconds` a caller uses for highlight sync that belongs to the twin.
 
         ⚠️ **The lock is in-process, which is the concurrency this service
-        actually creates** (one serving process per deployment). Two PROCESSES
+        actually creates** (one serving process per deployment). ⛔ **It is held
+        by READERS too, via `snapshot`, and that was a correction rather than a
+        design** -- serialising only writers left a single process able to pair
+        one synthesis's record with another's audio (`CTO-69/15`).
+
+        ⚠️ **What remains is genuinely cross-process:** two serving processes
         sharing one store can still cross a record with its twin's audio; both
         halves are complete and valid and only the byte and duration figures
-        can belong to the sibling synthesis. ⭐ **Named rather than implied: the
-        unique temporary below is what makes even that case safe from a
-        TRUNCATED file, which is the failure that matters.**
+        belong to the sibling. ⭐ **The unique temporary below is what makes
+        even that case safe from a TRUNCATED file, which is the failure that
+        matters.**
         """
         if not data:
             raise ValueError("refusing to store an empty artifact")

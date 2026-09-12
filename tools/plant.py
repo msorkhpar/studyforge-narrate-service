@@ -174,8 +174,8 @@ CONTROLS = (
     Control(
         id="p01", what="the cache lookup is removed from synthesise()",
         path="narrate/synthesis.py",
-        anchor="    record = store.lookup(artifact_id)",
-        replacement="    record = None",
+        anchor="    record, audio = store.snapshot(artifact_id, with_audio=keep_audio)",
+        replacement="    record, audio = None, None",
         expects="test_the_second_run_calls_the_engine_ZERO_times",
     ),
     Control(
@@ -267,6 +267,24 @@ CONTROLS = (
         replacement='    temporary = destination.parent / f".{destination.name}.tmp"\n'
                     "    handle = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)",
         expects="test_concurrent_writers_to_one_address_use_DIFFERENT_temporaries",
+    ),
+    # ⛔ `CTO-69/14`: the publish lock was the previous commit's headline
+    # addition and NO control planted it. These two are its halves.
+    Control(
+        id="p14", what="the WRITE-side publish lock is removed",
+        path="narrate/artifacts.py",
+        anchor="        with self._publish_lock(artifact_id):\n"
+               "            _atomic_write(destination, data)",
+        replacement="        if True:\n            _atomic_write(destination, data)",
+        expects="test_the_audio_and_its_record_are_published_as_ONE_PAIR",
+    ),
+    Control(
+        id="p15", what="the READ-side snapshot lock is removed",
+        path="narrate/artifacts.py",
+        anchor="        with self._publish_lock(artifact_id):\n"
+               "            record = self._lookup_unlocked(artifact_id)",
+        replacement="        if True:\n            record = self._lookup_unlocked(artifact_id)",
+        expects="test_a_reader_never_pairs_one_writers_record_with_anothers_audio",
     ),
     Control(
         id="p13", what="the chunk budget is dropped from the address",

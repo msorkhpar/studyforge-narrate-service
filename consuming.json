@@ -222,8 +222,9 @@
         "text"
       ],
       "engine_in_address": false,
-      "note": "the engine is deliberately not in the address, so moving between the cpu and gpu profiles of one model does not re-synthesise a corpus; a cached artifact reports the engine that actually made it. chunk_chars IS in the address because it decides where the text is cut and each chunk is a separate engine request, so a different budget is different bytes at every join; its value for this deployment is published on GET /healthz and in every manifest",
-      "chunk_chars_is_a_deployment_setting": true
+      "note": "the engine PROFILE is deliberately not in the address, so moving between the cpu and gpu builds of one model does not re-synthesise a corpus; a cached artifact reports the engine that actually made it. WARNING: that argument does not cover a MODEL change, which is audio-changing and is also outside the address -- swapping the model keeps every address and serves different audio. Open, routed to the voice-catalogue task. chunk_chars IS in the address because it decides where the text is cut and each chunk is a separate engine request, so a different budget is different bytes at every join; its value for this deployment is published on GET /healthz and in every manifest",
+      "chunk_chars_is_a_deployment_setting": true,
+      "engine_model_in_address": false
     },
     "caller_obligations": [
       "gate personal data out of the text before the request; this service never inspects it",

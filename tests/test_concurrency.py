@@ -248,3 +248,171 @@ def test_the_temporary_is_still_a_sibling_and_still_cleaned_up(tmp_path, payload
     for source_parent, destination_parent in seen:
         assert source_parent == destination_parent == str(tmp_path)
     assert [p.name for p in tmp_path.iterdir() if ".tmp" in p.name] == []
+
+
+# ---------------------------------------------------------------------------
+# ⛔ The PUBLISH LOCK, which `CTO-69/14` correctly charged as proved by nothing.
+#
+# ⚠️ **The unique temporary and the lock are two different properties and the
+# tests above only reach the first.** A reviewer nulled the lock on a clean
+# extract and the whole suite stayed green -- in the commit that shipped a
+# thirteen-control harness. Everything below fails without it, and controls
+# `p14` and `p15` plant its two halves.
+# ---------------------------------------------------------------------------
+
+
+def test_the_audio_and_its_record_are_published_as_ONE_PAIR(tmp_path):
+    """⛔ `CTO-69/14`: what the write-side lock buys, and nothing else did.
+
+    Unique temporaries guarantee each published FILE is one complete write.
+    They say nothing about the two files belonging to the same writer. Ordered
+    so that A publishes its audio, B publishes both of its files, and A then
+    publishes its record: without the lock the store ends up holding **B's
+    audio beside A's record**, and a caller reads a duration that belongs to a
+    synthesis it does not have.
+    """
+    store = ArtifactStore(tmp_path)
+    address = an_address()
+    at_record = threading.Event()
+    release = threading.Event()
+    failures = []
+
+    import narrate.artifacts as module
+    real_replace = module.os.replace
+
+    def watch(source, destination):
+        if (threading.current_thread().name == "A"
+                and str(destination).endswith(".json")):
+            at_record.set()
+            release.wait(TIMEOUT)
+        return real_replace(source, destination)
+
+    def put(name, payload):
+        try:
+            store.put(address, payload, dict(RECORD, bytes=len(payload)))
+        except Exception as exc:              # noqa: BLE001 - recorded
+            failures.append(f"{name}: {type(exc).__name__}: {exc}")
+
+    module.os.replace = watch
+    try:
+        writer_a = threading.Thread(target=put, args=("A", BIG), name="A")
+        writer_a.start()
+        assert at_record.wait(TIMEOUT), "writer A never reached its record"
+
+        writer_b = threading.Thread(target=put, args=("B", SMALL), name="B")
+        writer_b.start()
+        # ⚠️ Not asserted: WITH the lock B blocks here and never gets this far.
+        writer_b.join(2)
+
+        release.set()
+        writer_a.join(TIMEOUT)
+        writer_b.join(TIMEOUT)
+    finally:
+        module.os.replace = real_replace
+        release.set()
+
+    assert failures == [], failures
+    record = store.lookup(address)
+    audio = store.read(address)
+    assert record is not None
+    assert record["bytes"] == len(audio), (
+        f"the record says {record['bytes']} bytes and the audio is "
+        f"{len(audio)}; one writer's record is beside another's audio"
+    )
+
+
+def test_a_reader_never_pairs_one_writers_record_with_anothers_audio(tmp_path):
+    """⛔ `CTO-69/15`: the write-side lock alone leaves the READER crossing.
+
+    `lookup` then `read` is two unlocked reads. A writer landing between them
+    hands back the previous record beside the new audio -- **one process, not
+    two**, and in the case this module calls expected.
+    """
+    store = ArtifactStore(tmp_path)
+    address = an_address()
+    store.put(address, SMALL, dict(RECORD, bytes=len(SMALL)))
+
+    writers = []
+    real_read = store.read
+
+    def read_with_a_writer_landing_first(artifact_id):
+        if not writers:
+            writer = threading.Thread(
+                target=store.put,
+                args=(address, BIG, dict(RECORD, bytes=len(BIG))),
+            )
+            writers.append(writer)
+            writer.start()
+            # ⭐ WITHOUT the lock the writer lands inside this wait. WITH it,
+            # the writer blocks on the stripe this snapshot is holding.
+            writer.join(2)
+        return real_read(artifact_id)
+
+    store.read = read_with_a_writer_landing_first
+    try:
+        record, audio = store.snapshot(address)
+    finally:
+        store.read = real_read
+        for writer in writers:
+            writer.join(TIMEOUT)
+
+    assert record is not None and audio is not None
+    assert record["bytes"] == len(audio), (
+        f"the snapshot's record says {record['bytes']} bytes and its audio is "
+        f"{len(audio)}; the pair was taken across a write"
+    )
+
+
+def test_a_record_only_snapshot_takes_the_lock_too(tmp_path):
+    """⛔ The batch path reads no audio, and it crosses just the same.
+
+    ⚠️ An old record describing new audio is the same defect with the evidence
+    removed, so `with_audio=False` must wait for a writer mid-pair as well.
+    """
+    store = ArtifactStore(tmp_path)
+    address = an_address()
+    store.put(address, SMALL, dict(RECORD, bytes=len(SMALL)))
+
+    at_record = threading.Event()
+    release = threading.Event()
+    observed = []
+
+    import narrate.artifacts as module
+    real_replace = module.os.replace
+
+    def watch(source, destination):
+        if (threading.current_thread().name == "W"
+                and str(destination).endswith(".json")):
+            at_record.set()
+            release.wait(TIMEOUT)
+        return real_replace(source, destination)
+
+    module.os.replace = watch
+    try:
+        writer = threading.Thread(
+            target=store.put,
+            args=(address, BIG, dict(RECORD, bytes=len(BIG))), name="W")
+        writer.start()
+        assert at_record.wait(TIMEOUT), "the writer never reached its record"
+
+        reader = threading.Thread(
+            target=lambda: observed.append(store.snapshot(address, with_audio=False)))
+        reader.start()
+        reader.join(2)
+        # ⛔ With the lock the reader is still blocked; without it, it has
+        # already answered with the OLD record while new audio is on disk.
+        answered_early = not reader.is_alive()
+
+        release.set()
+        writer.join(TIMEOUT)
+        reader.join(TIMEOUT)
+    finally:
+        module.os.replace = real_replace
+        release.set()
+
+    assert not answered_early, (
+        "a record-only snapshot answered while a writer was between its two "
+        "renames, so it described audio that is no longer on disk"
+    )
+    record = observed[0][0]
+    assert record["bytes"] == len(store.read(address))

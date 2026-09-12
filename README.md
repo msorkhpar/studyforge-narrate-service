@@ -31,7 +31,9 @@ already got right are carried over unchanged:
   callers sending identical prose at the same time, which content addressing
   makes the *expected* case, cannot publish a mixture of their two syntheses.
   ⚠️ **A truncated audio file plays** — it simply stops mid-sentence — which is
-  why this is the failure worth engineering against.
+  why this is the failure worth engineering against. ⭐ **An artifact and the
+  record describing it are published, and read back, as one pair**, so a
+  duration you are given always belongs to the file you get.
 
 And one the service adds:
 

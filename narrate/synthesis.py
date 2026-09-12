@@ -173,8 +173,13 @@ def _from_store(artifact_id, store, media_types, keep_audio):
 
     ⛔ Everything but the media type comes from the artifact's own record, so a
     hit describes the bytes on disk rather than the request that found them.
+
+    ⛔ **One `snapshot` and not `lookup` then `read`.** Those are two unlocked
+    reads, and a writer landing between them hands back the previous record
+    beside the new audio (`CTO-69/15`). The pair is taken under the stripe the
+    writer holds.
     """
-    record = store.lookup(artifact_id)
+    record, audio = store.snapshot(artifact_id, with_audio=keep_audio)
     if record is None:
         return None
     return Synthesised(
@@ -188,7 +193,7 @@ def _from_store(artifact_id, store, media_types, keep_audio):
             model=record["engine_model"],
         ),
         chunks=record["chunks"],
-        audio=store.read(artifact_id) if keep_audio else None,
+        audio=audio,
         byte_count=record["bytes"],
         frames=record["frames"],
         seconds=record["seconds"],

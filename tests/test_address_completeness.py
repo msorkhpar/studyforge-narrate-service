@@ -21,6 +21,22 @@ declaration.** Each varies one input, synthesises twice, and asserts the audio
 really did change **and** the address changed with it. A control that compares
 two things an office controls is worth having; it is not evidence about the
 world.
+
+## ⛔ WHAT THIS MODULE DOES NOT PROVE, named because its class was once named as though it did
+
+⚠️ **The list below is HAND-ENUMERATED and derives nothing from the code**, so a
+newly added audio-changing input is invisible to it — which is the failure it
+was written to prevent, one level up (`CTO-69/19`). ⛔ **It is a checklist of
+four known inputs, not a universal**, and the class is named accordingly.
+
+⛔ **The known gap, stated rather than left to be found: the ENGINE MODEL is an
+audio-changing input and it is NOT in the address.** `consuming.json` argues the
+engine's exclusion for *"the cpu and gpu profiles of one model"* — ⚠️ **which is
+not the model-change case at all.** A deployment that swaps the model keeps
+every address and serves audio in a different voice. ⭐ **Routed to `NS-04`,
+which owns voices and will touch this seam**; the honest remedy may be to record
+the model in the address, or to declare the exclusion and make a model change a
+deliberate store reset.
 """
 
 from __future__ import annotations
@@ -62,8 +78,8 @@ def run(text, tmp_path, voice="am_liam", chunk_chars=1800, engine=None):
     )
 
 
-class TestEveryInputThatChangesTheAudioChangesTheAddress:
-    """⛔ The property, one case per input the synthesiser actually consumes.
+class TestEachEnumeratedInputChangesTheAddress:
+    """⛔ One case per input NAMED HERE — not a universal. See the module head.
 
     ⭐ Each case asserts BOTH halves. Asserting only that the addresses differ
     would pass for an input that changes nothing, which is a different bug and
@@ -160,9 +176,6 @@ class TestTheCostOfCoveringTheBudget:
 
 class TestTheDeclaredSetIsTheHashedSet:
     """⭐ Still worth having -- but now it is the SECOND line, not the first."""
-
-    def test_the_budget_is_one_of_the_named_fields(self):
-        assert "chunk_chars" in ADDRESS_FIELDS
 
     @pytest.mark.parametrize("field", ADDRESS_FIELDS)
     def test_every_named_field_is_one_the_minter_actually_varies_on(self, field):
