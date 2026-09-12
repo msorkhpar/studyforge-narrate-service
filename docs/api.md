@@ -1,7 +1,13 @@
 # The `narrate-service` HTTP API
 
-Version `0.1.0`. Three routes. Every request and response body is JSON except
-a synthesised artifact, which is audio.
+Version `0.1.0`, promise `provides: 2`. Four routes. Every request and
+response body is JSON except a synthesised artifact, which is audio.
+
+⭐ **Read `provides` before you build against this.** It versions **the promise
+below**, and it is neither the build's version nor the component's commit. It
+is reported by `GET /healthz` and echoed by every manifest, so a caller can
+check it in one request. Record the one you built against; a mismatch is
+refused, never migrated.
 
 ---
 
@@ -41,6 +47,7 @@ curl -fsS http://127.0.0.1:8870/healthz
 {
   "status": "ok",
   "version": "0.1.0",
+  "provides": 2,
   "engine_reachable": true,
   "formats": ["mp3"],
   "engine": "kokoro",
@@ -52,7 +59,8 @@ curl -fsS http://127.0.0.1:8870/healthz
 | field | |
 |---|---|
 | `status` | `"ok"` whenever the service answers at all |
-| `version` | the service's version |
+| `version` | the service's **build** version |
+| `provides` | ⭐ the version of the **promise** — the routes, the manifest's shape, and the cache's behaviour |
 | `engine` | the engine **family** deployed |
 | `engine_profile` | `cpu`, `gpu`, or `unknown`. ⚠️ **Declared by the deployment, never detected** — see *Profiles* below |
 | `engine_model` | the model the engine is asked for |
@@ -95,13 +103,14 @@ The artifact is also **kept**, and these headers say where:
 
 | header | |
 |---|---|
-| `Narrate-Artifact-Id` | 32 lowercase hex characters |
+| `Narrate-Artifact-Id` | ⭐ **the content address**: 64 lowercase hex characters |
 | `Narrate-Artifact-Url` | `/v1/artifacts/<id>` — fetch it again from here |
 | `Narrate-Chunks` | how many pieces the text was split into |
 | `Narrate-Voice` | the voice actually used |
 | `Narrate-Seconds` | the artifact's duration, summed from its frames |
 | `Narrate-Engine` | ⭐ **what made this artifact** — `<family>/<profile>`, e.g. `kokoro/cpu` |
 | `Narrate-Engine-Model` | the model it was made with |
+| `Narrate-Cached` | `true` if nothing was synthesised. ⚠️ On `true`, `Narrate-Engine` names the engine that made the file **the first time**, which may not be the one deployed now |
 
 ⛔ **Record `Narrate-Engine` beside an artifact you keep, and do not go back to
 `/healthz` for it later.** `/healthz` answers *what will this deployment use
@@ -128,6 +137,114 @@ Every refusal is `{"error": "<message>"}`.
 ⛔ **No refusal, log line or header ever echoes the text you sent.** A message
 that quoted the input would write it into a log, which is the same disclosure
 by a slower route.
+
+---
+
+## `POST /v1/jobs` — a batch of keyed segments
+
+⭐ **This is the shape a corpus needs.** A corpus is thousands of speech units
+and a page's highlight sync needs one clip per unit, so a request per segment
+makes per-request overhead the difference between minutes and hours.
+
+### Request
+
+```json
+{
+  "segments": [
+    {"id": "u01-s001", "text": "The first speech unit."},
+    {"id": "u01-s002", "text": "The second speech unit."}
+  ],
+  "voice": "am_liam",
+  "format": "mp3"
+}
+```
+
+| field | required | default | |
+|---|---|---|---|
+| `segments` | ⭐ yes | — | 1 to 5000 objects, each `{id, text}`. ⛔ Ids must be **unique** |
+| `segments[].id` | ⭐ yes | — | **your** key, 1–128 characters of letters, digits, `.` `_` `:` `-`, beginning with a letter or digit. Echoed back; never used as a filename |
+| `segments[].text` | ⭐ yes | — | the words to speak, any length |
+| `voice` | no | `am_liam` | ⚠️ **job-wide**, not per segment |
+| `format` | no | `mp3` | ⛔ job-wide, and the same closed set |
+
+⚠️ **The 4 MiB body cap applies here too.** A corpus larger than one job is
+submitted as several, which costs nothing: addresses are content addresses, so
+a segment that appears in two jobs is synthesised once.
+
+### Response — `200`, and the body is the **manifest**
+
+⛔ **Never audio.** A response carrying the bytes of three thousand segments is
+a multi-gigabyte body nobody wants in memory. You get one address per id and
+fetch what you need from `GET /v1/artifacts/<id>` — which on a re-run is
+usually nothing at all.
+
+```json
+{
+  "provides": 2,
+  "voice": "am_liam",
+  "format": "mp3",
+  "addressing": {"scheme": "narrate-address-1", "hash": "sha256",
+                 "over": ["format", "voice", "text"], "order": ["..."],
+                 "encoding": "utf-8, each field length-prefixed as '<bytes>:' before the bytes"},
+  "counts": {"total": 4, "synthesised": 2, "cached": 1, "failed": 1, "skipped": 0},
+  "ok": false,
+  "segments": [
+    {"id": "u01-s001", "status": "synthesised",
+     "artifact_id": "<64 hex>", "url": "/v1/artifacts/<64 hex>",
+     "format": "mp3", "media_type": "audio/mpeg", "voice": "am_liam",
+     "engine": "kokoro", "engine_profile": "cpu", "engine_model": "kokoro",
+     "chunks": 1, "bytes": 47276, "seconds": 2.952, "sample_rate": 24000},
+    {"id": "u01-s004", "status": "failed", "reason": "engine_failed",
+     "error": "the engine's output is not playable audio"}
+  ]
+}
+```
+
+⭐ **Every id you submitted appears, in the order you sent it.** So
+`len(segments)` equals what you sent and you never diff two lists to find what
+is missing. A manifest that listed only successes would have silent omissions.
+
+| `status` | |
+|---|---|
+| `synthesised` | the engine ran and produced it |
+| `cached` | ⭐ **the engine was not called.** An artifact with this address was already stored |
+| `failed` | no artifact. `reason` and `error` say why |
+| `skipped` | ⚠️ not attempted — the job stopped early. See below |
+
+| `reason` | |
+|---|---|
+| `not_synthesisable` | this segment's text is empty or all whitespace. Your other segments are unaffected |
+| `engine_failed` | the engine answered and the answer was unusable **for this input**. The job continues |
+| `engine_unavailable` | ⛔ nothing answered. **The job stops here** |
+
+### ⛔ Two failures, and only one of them stops the job
+
+⭐ **A bad answer is per-segment; nothing answering at all halts the run.** A
+segment the engine choked on says nothing about the next one, so the job goes
+on. But an engine that cannot be reached will not be reachable for the next
+three thousand segments either, and a corpus-sized job must not spend an hour
+discovering that a container is down.
+
+⛔ **Everything already finished is still in the manifest with its address, and
+still on disk.** Successful work is never discarded. Re-submit the same job
+when the engine is back: the finished segments are cache hits and you pay only
+for the rest.
+
+### ⚠️ A well-formed job always answers `200`
+
+Whatever the mix of outcomes. The job **ran**; per-segment results are data —
+read `counts` and `ok`. You have to read the manifest anyway to learn the
+addresses, so there is no path on which the outcome is missed.
+
+A request that is not a well-formed **job** never runs at all:
+
+| status | when |
+|---|---|
+| `400` | the body is not a JSON object; `segments` is missing, not a list, or empty; a segment is not an object, or its `id` or `text` is missing or the wrong type or shape; **two segments share an id**; `voice` or `format` is not a string, or `format` is outside the closed set |
+| `411`, `413` | as for `POST /v1/speech` |
+
+⛔ **A duplicate id is refused rather than reported twice.** A manifest keyed by
+id cannot carry two outcomes under one key without one of them being invisible.
 
 ---
 
@@ -202,8 +319,10 @@ their requirements and the GPU one's opt-in**.
 | key | |
 |---|---|
 | `consuming_api` | the version of **this file's schema** |
-| `provides` | the version of **the promise the service makes** |
+| `provides` | the version of **the promise the service makes**. Today: `2` |
 | `not_yet_declared` | ⭐ what is genuinely absent, named. Today: `voices` |
+| `api.manifest` | the manifest's closed sets — statuses, failure reasons, which reason halts a job, the segment cap |
+| `api.cache` | ⭐ the addressing scheme, exactly enough to recompute an address yourself |
 
 ⚠️ **`consuming_api` and `provides` are different questions and neither
 substitutes for the other**, and neither is the component's commit: a build
@@ -215,7 +334,13 @@ migrated.
 that each declared engine image appears in the compose file the declaration
 names, that the default deployment contains no device reservation, and that
 every declared default and closed set is the constant the service actually
-enforces.
+enforces — ⭐ **which since `provides: 2` includes the manifest's statuses, its
+failure reasons, the segment and body caps, and the addressing block.**
+
+⚠️ **The manifest itself has no version key of its own, and that is deliberate.**
+It is a response body rather than a file, so it is versioned by the promise
+register that already exists: `provides`, here and echoed in every manifest. A
+second version number would be a second authority on one shape.
 
 ---
 
@@ -228,8 +353,12 @@ curl -fsS http://127.0.0.1:8870/v1/artifacts/$ID -o speech.mp3
 ```
 
 `200` with `Content-Type: audio/mpeg`, or `404` — which is also what a
-malformed id gets, because an id is 32 lowercase hex characters and anything
-else was never one this service minted.
+malformed id gets, because an id is 64 lowercase hexadecimal characters and
+anything else was never one this service minted.
+
+⚠️ **32 hex is also accepted, and only for artifacts version 0.1.0 minted at
+random.** Nothing mints one any more; the pattern stays wide so that an id a
+caller already recorded keeps working.
 
 ⚠️ **Artifacts are not garbage-collected.** The store grows until somebody
 empties it. That is a deployment decision and this service does not make it for
@@ -237,7 +366,7 @@ you.
 
 ---
 
-## Two properties this service guarantees
+## Three properties this service guarantees
 
 ### Chunking is **the service's** job
 
@@ -264,6 +393,39 @@ which a partial artifact exists under a name you could fetch.
 If any chunk fails, **nothing is stored** — you get a `502` or `503` and the
 store is exactly as you found it.
 
+### ⭐ Synthesis is **idempotent**, because artifacts are content-addressed
+
+An artifact's id is `sha256` over the scheme's own name, the `format`, the
+`voice` and the `text` — each length-prefixed, so no two different requests can
+be re-cut into the same digest. ⛔ **Re-submitting a segment whose text and
+voice are unchanged synthesises nothing and returns the same address.** That is
+what makes incremental regeneration possible: change one segment's prose and
+one segment is re-synthesised.
+
+⭐ **You can compute an address yourself, before you send anything.** Every
+manifest publishes `addressing`, and `consuming.json` carries the same block —
+so an incremental build can decide what to submit rather than submitting
+everything and hoping.
+
+⚠️ **The address is over the REQUEST, never over the audio.** A speech model is
+not guaranteed to emit identical bytes for identical input, so a digest of the
+output would change on every run — a cache that never hits.
+
+⛔ **The engine is deliberately NOT in the address.** If it were, moving a
+deployment between the CPU and GPU profiles of the same model would
+re-synthesise a whole corpus. What you get instead is honesty about what
+actually made a file: a cache hit reports the engine that **produced** it, and
+`Narrate-Cached: true` tells you to read it that way.
+
+⚠️ **Two texts that differ only in surrounding whitespace are two addresses.**
+No normalisation is applied, deliberately: a normalisation here would be a
+second rule that must agree with the chunker forever, and if the two ever
+disagreed one text would be served the other's audio. One extra synthesis is
+the cheaper error.
+
+⚠️ **Nothing is garbage-collected.** An edited segment's old artifact stays on
+disk under its old address, playable by nothing. Reconciliation is yours.
+
 ---
 
 ## What is **not** here yet
@@ -273,8 +435,6 @@ against something half-present:
 
 | not here | where it goes |
 |---|---|
-| ⛔ **A batch job API** — a list of `{id, text}` segments in, one artifact per id plus a manifest out | the next task. **There is no `/v1/jobs`**, and a test asserts its absence |
-| ⛔ **Content-addressed caching and idempotence** | with the batch API. ⚠️ **Today, re-submitting identical text synthesises again and returns a different id.** The id is opaque and random — it is *not* a content address, deliberately, so that nothing starts relying on idempotence that is not there |
 | ⛔ **A voice catalogue** — what voices exist and how a corpus picks one | a later task. `voice` is passed through to the engine unvalidated; an unknown voice surfaces as a `502` |
 | ⛔ **The `voices` half of `consuming.json`** | the voice-catalogue task. ⭐ **The rest of the file is here**, and it names its own gap in `not_yet_declared` so you can tell "no voices" from "not written yet" |
 | ⛔ **Formats other than `mp3`** | an MPEG elementary stream is a run of independently decodable frames, so its chunks concatenate with no muxer. A container format cannot be joined that way. A half-supported format that produced a broken file for long input would be worse than a refusal |

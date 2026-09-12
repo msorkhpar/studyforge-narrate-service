@@ -1,7 +1,8 @@
-"""The HTTP surface: three routes, on `http.server`, standard library only.
+"""The HTTP surface: four routes, on `http.server`, standard library only.
 
     GET  /healthz                 is the service up, and is its engine up
     POST /v1/speech               synthesise one text, get one artifact back
+    POST /v1/jobs                 synthesise many keyed segments, get a manifest
     GET  /v1/artifacts/<id>       fetch a finished artifact again
 
 ⭐ **Why `POST /v1/speech` returns the audio *and* keeps it.** A caller that
@@ -15,11 +16,14 @@ caller is made to do the other's work.
 keeps its own copy in its own directory; a synthesis service that knew where a
 study site keeps its audio would be a second authority on layout.
 
-⛔ **There is no batch route here, and its absence is deliberate.** A job of
-many keyed segments returning a manifest, and the content-addressed cache that
-makes re-submission free, are the next task's; see `docs/api.md`, *What is not
-here yet*. Half a batch API -- one that took a list but deduplicated nothing --
-would be a shape callers built against and then had to migrate off.
+⭐ **`POST /v1/jobs` NEVER RETURNS AUDIO, and that is the difference between the
+two synthesis routes.** A corpus is thousands of segments; a response that
+carried their bytes would be a multi-gigabyte body no caller wants in memory.
+The manifest carries one address per id and the caller fetches what it needs
+from `/v1/artifacts/<id>` -- which, because addresses are content addresses, is
+usually nothing at all on a re-run. ⛔ **Both routes go through the same
+`synthesise()` and therefore the same cache**: a segment sent to one is a cache
+hit at the other.
 
 ⛔ **No authentication, and therefore loopback by default.** Binding this on a
 routable interface is a decision a deployment makes explicitly, in front of
@@ -32,10 +36,11 @@ import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__
+from . import PROVIDES, __version__
 from .artifacts import ArtifactStore, UnknownArtifact
 from .config import FORMAT_MEDIA_TYPES, SUPPORTED_FORMATS
 from .engine import EngineError, EngineUnavailable, build_engine, check_engine
+from .jobs import InvalidJob, parse_job, run_job
 from .synthesis import UnsupportedFormat, synthesise
 
 #: Refuse a body larger than this before reading it. Synthesis is slow and a
@@ -67,6 +72,8 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/v1/speech":
             return self._speech()
+        if self.path == "/v1/jobs":
+            return self._jobs()
         return self._error(HTTPStatus.NOT_FOUND, "no such route")
 
     # -- routes -----------------------------------------------------------
@@ -76,6 +83,9 @@ class _Handler(BaseHTTPRequestHandler):
         payload = {
             "status": "ok",
             "version": __version__,
+            # ⭐ Which PROMISE this deployment is making, so a caller can check
+            # it before it builds a job rather than after. Not the build.
+            "provides": PROVIDES,
             "engine_reachable": service.engine.reachable(),
             "formats": list(SUPPORTED_FORMATS),
         }
@@ -146,8 +156,44 @@ class _Handler(BaseHTTPRequestHandler):
                 # answering for a redeployed engine.
                 "Narrate-Engine": result.identity.label,
                 "Narrate-Engine-Model": result.identity.model,
+                # ⭐ Whether this cost a synthesis. On `true` the engine above
+                # is the one that made the file, not the one deployed now.
+                "Narrate-Cached": "true" if result.cached else "false",
             },
         )
+
+    def _jobs(self):
+        """A batch of keyed segments. ⛔ The manifest is the whole response.
+
+        A well-formed job always answers `200`; a segment's failure is an entry
+        in the manifest, because a caller must read the manifest anyway to
+        learn the addresses. A body that is not a job never runs and is a
+        `400`.
+        """
+        service = self.server.narrate
+
+        body = self._read_body()
+        if body is None:
+            return None
+        try:
+            request = json.loads(body)
+        except (ValueError, UnicodeDecodeError):
+            return self._error(HTTPStatus.BAD_REQUEST, "body must be JSON")
+
+        try:
+            job = parse_job(request, default_voice=service.voice)
+        except InvalidJob as exc:
+            return self._error(HTTPStatus.BAD_REQUEST, str(exc))
+
+        manifest = run_job(
+            job,
+            engine=service.engine,
+            store=service.store,
+            chunk_chars=service.chunk_chars,
+            media_types=FORMAT_MEDIA_TYPES,
+            provides=PROVIDES,
+        )
+        return self._json(HTTPStatus.OK, manifest)
 
     # -- plumbing ---------------------------------------------------------
 

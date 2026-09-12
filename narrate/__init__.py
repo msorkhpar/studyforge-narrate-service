@@ -27,6 +27,18 @@ Standard library only. The engine speaks HTTP, so `urllib.request` is a
 complete client and no SDK is needed.
 """
 
-__all__ = ["__version__"]
+__all__ = ["PROVIDES", "__version__"]
 
 __version__ = "0.1.0"
+
+#: ⛔ The version of **the promise this service makes**, and the single source
+#: of the `provides` key in `consuming.json` -- a test asserts the two agree.
+#: ⚠️ It is neither `__version__` nor the component's commit: a build changes
+#: without the promise changing, and the promise can change without a new build
+#: (spec R9, Ruling 5).
+#:
+#: ⭐ `2` because the batch job API and the content-addressed cache changed what
+#: a caller may rely on: `POST /v1/jobs` exists, an artifact id is now a content
+#: address, and re-submitting unchanged text synthesises nothing. `1` was the
+#: promise of three routes and a random, non-idempotent id.
+PROVIDES = 2

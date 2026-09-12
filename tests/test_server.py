@@ -4,6 +4,10 @@ The server is started on port 0 and talked to with `http.client`, so these are
 end-to-end HTTP assertions rather than handler-method calls: the status line,
 the headers and the body are what a caller actually receives. The engine is
 faked, so the suite needs no running engine and no GPU.
+
+⚠️ **The `service` fixture is in `tests/conftest.py`** -- `test_server_jobs.py`
+needs the same running server, and one definition is what keeps the two
+modules' idea of a service identical. `POST /v1/jobs` is tested there.
 """
 
 from __future__ import annotations
@@ -24,44 +28,6 @@ from narrate.engine import (
 )
 from narrate.server import MAX_BODY_BYTES, build_server
 from tests.support import FakeEngine, mpeg_bytes
-
-
-@pytest.fixture
-def service(tmp_path):
-    """A running server and a `request(method, path, body)` helper."""
-    made = {}
-
-    def start(engine=None, chunk_chars=1800):
-        config = Config(artifact_dir=tmp_path, bind="127.0.0.1", port=0,
-                        chunk_chars=chunk_chars)
-        server = build_server(config, engine=engine or FakeEngine())
-        made["server"] = server
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        host, port = server.server_address[:2]
-
-        def request(method, path, body=None, headers=None, raw_body=None):
-            connection = http.client.HTTPConnection(host, port, timeout=10)
-            if raw_body is not None:
-                payload = raw_body
-            else:
-                payload = None if body is None else json.dumps(body).encode("utf-8")
-            connection.request(method, path, payload, headers or (
-                {"Content-Type": "application/json"} if payload else {}
-            ))
-            response = connection.getresponse()
-            data = response.read()
-            connection.close()
-            return response, data
-
-        return request
-
-    yield start
-
-    server = made.get("server")
-    if server is not None:
-        server.shutdown()
-        server.server_close()
 
 
 @pytest.fixture
@@ -112,7 +78,8 @@ def test_speech_returns_playable_audio_and_names_the_artifact(service):
     assert body == mpeg_bytes(3)
     assert response.getheader("Narrate-Chunks") == "1"
     artifact_id = response.getheader("Narrate-Artifact-Id")
-    assert len(artifact_id) == 32
+    # ⭐ 64, not 32: the id is a content address now, not a random token.
+    assert len(artifact_id) == 64
     assert response.getheader("Narrate-Artifact-Url") == f"/v1/artifacts/{artifact_id}"
 
 
@@ -267,8 +234,8 @@ def test_an_unknown_or_malformed_artifact_is_four_hundred_and_four(service, path
 @pytest.mark.parametrize("method,path", [
     ("GET", "/"),
     ("GET", "/v1/speech"),
+    ("GET", "/v1/jobs"),
     ("POST", "/healthz"),
-    ("POST", "/v1/jobs"),
 ])
 def test_an_unknown_route_is_four_hundred_and_four(service, method, path):
     request = service()
@@ -277,15 +244,20 @@ def test_an_unknown_route_is_four_hundred_and_four(service, method, path):
     assert response.status == 404
 
 
-def test_there_is_no_batch_route(service):
-    """⛔ Asserted, not merely absent.
+def test_the_batch_route_is_at_one_path_and_the_near_misses_are_not_it(service):
+    """⭐ The inverse of `NS-01`'s `test_there_is_no_batch_route`.
 
-    A job of keyed segments returning a manifest is the next task's shape. A
-    test that names the absence is what stops it being added here by accident
-    and stops a caller building against a half-implementation.
+    That test asserted the absence of `/v1/jobs` so that this task's change
+    would be visible rather than silent. It is inverted here rather than
+    deleted: `/v1/jobs` now answers, and the spellings a caller might guess
+    still do not, because a route that half-exists under three names is how two
+    callers end up on two shapes.
     """
     request = service()
-    for path in ("/v1/jobs", "/v1/batch", "/v1/speech/batch"):
+    response, _ = request("POST", "/v1/jobs",
+                          {"segments": [{"id": "s1", "text": "Prose."}]})
+    assert response.status == 200
+    for path in ("/v1/batch", "/v1/speech/batch", "/v1/job"):
         response, _ = request("POST", path, {"segments": []})
         assert response.status == 404
 
@@ -344,11 +316,21 @@ class TestTheEngineIsReported:
         )
         assert response.getheader("Narrate-Engine-Model") == health["engine_model"]
 
-    def test_the_declared_profile_follows_the_deployment_and_nothing_else(self, service):
-        """⭐ The same engine class, two profiles, no code path in between."""
+    def test_the_declared_profile_follows_the_deployment_and_nothing_else(
+        self, service, tmp_path
+    ):
+        """⭐ The same engine class, two profiles, no code path in between.
+
+        ⚠️ **Each profile gets its OWN store**, and that is load-bearing since
+        the cache landed: three deployments sharing one store would find each
+        other's artifacts, and a cache hit correctly reports the engine that
+        MADE it rather than the one now deployed -- so a shared store would
+        measure the cache, not the profile plumbing.
+        """
         seen = set()
         for profile in ("cpu", "gpu", "unknown"):
-            request = service(engine=FakeEngine(profile=profile))
+            request = service(engine=FakeEngine(profile=profile),
+                              artifact_dir=tmp_path / profile)
             response, _ = request("POST", "/v1/speech", {"text": "Prose."})
             seen.add(response.getheader("Narrate-Engine"))
         assert seen == {"fake/cpu", "fake/gpu", "fake/unknown"}

@@ -1,19 +1,76 @@
-"""`narrate.artifacts` -- the property is *complete or not at all*."""
+"""`narrate.artifacts` -- the address, and *complete or not at all*."""
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from narrate.artifacts import ArtifactStore, UnknownArtifact, is_artifact_id, mint_id
+from narrate.artifacts import (
+    ADDRESS_HEX_CHARS,
+    RECORD_FIELDS,
+    RECORD_VERSION,
+    ArtifactStore,
+    UnknownArtifact,
+    address_for,
+    is_artifact_id,
+)
+
+RECORD = {
+    "format": "mp3", "voice": "am_liam", "bytes": 11, "chunks": 1,
+    "frames": 1, "seconds": 0.026, "sample_rate": 44100,
+    "engine": "fake", "engine_profile": "unknown", "engine_model": "fake-1",
+}
 
 
-def test_a_minted_id_is_accepted_by_the_pattern():
-    for _ in range(50):
-        assert is_artifact_id(mint_id())
+def an_address(text="Some prose.", voice="am_liam", fmt="mp3"):
+    return address_for(text, voice, fmt)
 
 
-def test_ids_are_not_reused():
-    assert len({mint_id() for _ in range(500)}) == 500
+class TestTheAddressIsAFunctionOfTheRequest:
+    def test_it_is_sixty_four_lowercase_hex_and_the_pattern_admits_it(self):
+        address = an_address()
+        assert len(address) == ADDRESS_HEX_CHARS
+        assert address == address.lower()
+        assert is_artifact_id(address)
+
+    def test_the_same_request_always_gives_the_same_address(self):
+        assert an_address() == an_address()
+
+    @pytest.mark.parametrize("changed", [
+        {"text": "Other prose."},
+        {"voice": "af_bella"},
+    ])
+    def test_changing_an_input_changes_the_address(self, changed):
+        assert an_address() != an_address(**changed)
+
+    def test_the_audio_is_not_in_the_address(self):
+        """⛔ The R10 carve-out's mechanism.
+
+        Synthesised audio is not byte-for-byte reproducible, so an address over
+        the OUTPUT would change on every re-synthesis -- a cache that never
+        hits. The address is over the request, which is why it can be computed
+        before the engine is called at all, with no bytes in hand.
+        """
+        assert an_address(text="Never synthesised.")
+
+    def test_the_fields_are_length_prefixed_so_they_cannot_be_recut(self):
+        """⛔ The classic collision, asserted rather than argued.
+
+        Without a length prefix, `voice="a", text="bc"` and `voice="ab",
+        text="c"` hash the same concatenation.
+        """
+        assert address_for("bc", "a", "mp3") != address_for("c", "ab", "mp3")
+
+    def test_the_text_is_not_normalised_and_that_is_the_safe_direction(self):
+        """⚠️ Deliberate: `" Hello "` and `"Hello"` are different addresses.
+
+        A normalisation here would be a second rule that must agree with
+        `narrate.chunking` forever; if the two ever disagreed, two different
+        texts would share an address and one would be served the other's audio.
+        One extra synthesis is the cheaper error.
+        """
+        assert an_address(text=" Hello ") != an_address(text="Hello")
 
 
 @pytest.mark.parametrize("bad", [
@@ -26,11 +83,28 @@ def test_ids_are_not_reused():
     "0123456789abcdef0123456789abcdef0",  # 33 characters
     "0123456789abcdef0123456789abcde/",
     "0123456789abcdef0123456789abcdez",
+    "0" * 63,
+    "0" * 65,
     None,
     17,
 ])
 def test_a_bad_id_never_reaches_the_filesystem(bad):
     assert not is_artifact_id(bad)
+
+
+def test_a_thirty_two_hex_id_is_still_admitted(tmp_path):
+    """⭐ A store written by 0.1.0 holds randomly minted 32-hex artifacts.
+
+    Widening the pattern to 64 without keeping 32 would make every id a caller
+    already recorded un-fetchable. ⚠️ Nothing mints one any more.
+    """
+    legacy = "0123456789abcdef0123456789abcdef"
+    assert is_artifact_id(legacy)
+    store = ArtifactStore(tmp_path)
+    store.path_for(legacy).write_bytes(b"older-audio")
+    assert store.read(legacy) == b"older-audio"
+    # ⛔ ...and it is never a cache hit, because it carries no record.
+    assert store.lookup(legacy) is None
 
 
 def test_path_for_refuses_a_bad_id(tmp_path):
@@ -50,28 +124,81 @@ def test_a_traversal_id_cannot_read_a_neighbouring_file(tmp_path):
 
 def test_put_then_read_round_trips(tmp_path):
     store = ArtifactStore(tmp_path)
-    artifact_id = mint_id()
-    store.put(artifact_id, b"audio-bytes")
-    assert store.read(artifact_id) == b"audio-bytes"
+    store.put(an_address(), b"audio-bytes", RECORD)
+    assert store.read(an_address()) == b"audio-bytes"
 
 
 def test_put_creates_the_directory(tmp_path):
     store = ArtifactStore(tmp_path / "deep" / "nested")
-    store.put(mint_id(), b"x")
+    store.put(an_address(), b"x", RECORD)
     assert (tmp_path / "deep" / "nested").is_dir()
 
 
 def test_an_empty_artifact_is_refused(tmp_path):
     store = ArtifactStore(tmp_path)
     with pytest.raises(ValueError, match="empty"):
-        store.put(mint_id(), b"")
+        store.put(an_address(), b"", RECORD)
     assert list(tmp_path.iterdir()) == []
 
 
 def test_reading_an_absent_artifact_raises(tmp_path):
     store = ArtifactStore(tmp_path)
     with pytest.raises(UnknownArtifact):
-        store.read(mint_id())
+        store.read(an_address())
+
+
+class TestTheRecordIsTheCachePredicate:
+    def test_a_stored_artifact_looks_up_to_its_record(self, tmp_path):
+        store = ArtifactStore(tmp_path)
+        store.put(an_address(), b"audio", RECORD)
+        record = store.lookup(an_address())
+        assert record["engine"] == "fake"
+        assert record["record"] == RECORD_VERSION
+        assert all(field in record for field in RECORD_FIELDS)
+
+    def test_an_absent_artifact_looks_up_to_nothing(self, tmp_path):
+        assert ArtifactStore(tmp_path).lookup(an_address()) is None
+
+    def test_a_malformed_id_looks_up_to_nothing_rather_than_raising(self, tmp_path):
+        """⛔ The predicate must never be the thing that fails a job."""
+        assert ArtifactStore(tmp_path).lookup("../../etc/passwd") is None
+
+    def test_audio_without_a_record_is_a_MISS(self, tmp_path):
+        """⭐ The crash-between-the-two-writes case, and it reads as a miss."""
+        store = ArtifactStore(tmp_path)
+        store.path_for(an_address()).write_bytes(b"orphan")
+        assert store.lookup(an_address()) is None
+
+    def test_a_record_without_audio_is_a_MISS(self, tmp_path):
+        store = ArtifactStore(tmp_path)
+        path = store.record_path_for(an_address())
+        path.write_text(json.dumps(dict(RECORD, record=RECORD_VERSION)))
+        assert store.lookup(an_address()) is None
+
+    @pytest.mark.parametrize("damage", [
+        "not json at all",
+        "[]",
+        '{"record": 1}',
+        '"a string"',
+    ])
+    def test_an_unusable_record_is_a_MISS_and_never_an_error(self, tmp_path, damage):
+        store = ArtifactStore(tmp_path)
+        store.put(an_address(), b"audio", RECORD)
+        store.record_path_for(an_address()).write_text(damage)
+        assert store.lookup(an_address()) is None
+
+    def test_a_record_from_another_version_is_a_MISS(self, tmp_path):
+        store = ArtifactStore(tmp_path)
+        store.put(an_address(), b"audio", RECORD)
+        store.record_path_for(an_address()).write_text(
+            json.dumps(dict(RECORD, record=RECORD_VERSION + 1))
+        )
+        assert store.lookup(an_address()) is None
+
+    def test_the_record_version_is_stamped_by_the_store_not_the_caller(self, tmp_path):
+        store = ArtifactStore(tmp_path)
+        store.put(an_address(), b"audio", dict(RECORD, record="nonsense"))
+        assert store.lookup(an_address())["record"] == RECORD_VERSION
 
 
 def test_an_interrupted_write_leaves_no_artifact_and_no_temporary(tmp_path, monkeypatch):
@@ -83,17 +210,16 @@ def test_an_interrupted_write_leaves_no_artifact_and_no_temporary(tmp_path, monk
     file is the dangerous failure, because it plays.
     """
     store = ArtifactStore(tmp_path)
-    artifact_id = mint_id()
 
     def boom(source, destination):
         raise OSError("interrupted")
 
     monkeypatch.setattr("narrate.artifacts.os.replace", boom)
     with pytest.raises(OSError):
-        store.put(artifact_id, b"half-an-mp3")
+        store.put(an_address(), b"half-an-mp3", RECORD)
 
     assert list(tmp_path.iterdir()) == []
-    assert not store.path_for(artifact_id).exists()
+    assert not store.path_for(an_address()).exists()
 
 
 def test_the_temporary_is_a_sibling_of_the_destination(tmp_path):
@@ -101,34 +227,35 @@ def test_the_temporary_is_a_sibling_of_the_destination(tmp_path):
 
     Staging in a system temporary directory and moving across would be a copy.
     The assertion is that the staged file is in the destination's own
-    directory, which is what makes the rename atomic.
+    directory, which is what makes the rename atomic -- for the record as much
+    as for the audio.
     """
     store = ArtifactStore(tmp_path)
-    artifact_id = mint_id()
-    seen = {}
-
-    real_replace = __import__("os").replace
-
-    def watch(source, destination):
-        seen["source_parent"] = str(source).rsplit("/", 1)[0]
-        seen["destination_parent"] = str(destination).rsplit("/", 1)[0]
-        return real_replace(source, destination)
+    seen = []
 
     import narrate.artifacts as module
-    original = module.os.replace
+    real_replace = module.os.replace
+
+    def watch(source, destination):
+        seen.append((str(source).rsplit("/", 1)[0],
+                     str(destination).rsplit("/", 1)[0]))
+        return real_replace(source, destination)
+
     module.os.replace = watch
     try:
-        store.put(artifact_id, b"bytes")
+        store.put(an_address(), b"bytes", RECORD)
     finally:
-        module.os.replace = original
+        module.os.replace = real_replace
 
-    assert seen["source_parent"] == seen["destination_parent"] == str(tmp_path)
+    assert len(seen) == 2  # the audio, then the record
+    for source_parent, destination_parent in seen:
+        assert source_parent == destination_parent == str(tmp_path)
 
 
 def test_overwriting_an_artifact_is_still_atomic(tmp_path):
     store = ArtifactStore(tmp_path)
-    artifact_id = mint_id()
-    store.put(artifact_id, b"first")
-    store.put(artifact_id, b"second-and-longer")
-    assert store.read(artifact_id) == b"second-and-longer"
-    assert len(list(tmp_path.iterdir())) == 1
+    store.put(an_address(), b"first", RECORD)
+    store.put(an_address(), b"second-and-longer", dict(RECORD, bytes=17))
+    assert store.read(an_address()) == b"second-and-longer"
+    assert store.lookup(an_address())["bytes"] == 17
+    assert sorted(p.suffix for p in tmp_path.iterdir()) == [".json", ".mp3"]

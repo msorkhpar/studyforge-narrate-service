@@ -1,4 +1,4 @@
-"""Where a synthesised artifact lands, and why it lands there in one step.
+"""What an artifact is called, and why it lands in one step.
 
 ⭐ **The property this module exists for**: an artifact appears at its final
 name **complete or not at all**. Bytes are written to a temporary sibling in the
@@ -13,47 +13,134 @@ only within a filesystem, and a system temporary directory is routinely a
 different one; staging there and moving across would be a copy, which is exactly
 the non-atomic write this module removes.
 
-⛔ **The id is minted at random, and that is a deliberate non-decision.** It is
-*not* a content address: this service does not deduplicate, does not cache, and
-re-synthesising the same text twice produces two artifacts. Content addressing
-and the cache it enables are a separate piece of work, and a half-built address
-here -- one callers could start to rely on for idempotence it does not have --
-would be worse than an id that is obviously opaque.
+## ⭐ The id is a CONTENT ADDRESS, and this module is the one place it is minted
+
+⛔ **`address_for(text, voice, fmt)` replaced a random `mint_id()`, and the
+change is the whole of this store's contribution to idempotence.** Two requests
+that would produce the same audio produce the same id, so the second finds the
+first already stored and synthesises nothing (`narrate.synthesis`).
+
+⚠️ **Synthesised audio is NOT byte-for-byte reproducible** -- a speech model may
+emit different bytes for identical input -- so the address is emphatically *not*
+a digest of the audio. A digest of the output would change on every
+re-synthesis, which is a cache that never hits. ⭐ **The address is a digest of
+the REQUEST**: the inputs that decide what is said and how.
+
+### ⛔ What the address is computed over, and what it deliberately is not
+
+| in the address | |
+|---|---|
+| the scheme's own name and version | so a future change to what is hashed cannot collide with today's addresses |
+| `format` | different formats are different bytes, and the store keeps one file per address |
+| `voice` | changing a corpus's voice must invalidate that corpus's audio, and only that corpus's |
+| `text` | ⭐ **exactly as submitted. No normalisation. See below** |
+
+⛔ **THE ENGINE IS NOT IN THE ADDRESS**, and that is a decision rather than an
+omission. Putting it there would invalidate every cached artifact the moment a
+deployment moved between the CPU and GPU profiles of the *same* model -- a
+redeployment would re-synthesise a whole corpus. What is owed instead is
+honesty about what actually made a cached artifact, and that is what the record
+beside the bytes is for: a cache hit reports **the engine that produced it**,
+never the engine deployed now.
+
+⛔ **The text is hashed exactly as submitted, and the alternative was
+considered.** `narrate.chunking` strips its input, so `" Hello "` and `"Hello"`
+do produce identical audio, and an address that stripped would spare one
+synthesis. It does not strip, because a normalisation here is a second rule
+that must agree with the chunker **forever**: if the two ever disagree, two
+different texts share an address and the store serves the wrong audio for one
+of them. ⭐ **The chosen error direction is to synthesise something twice, never
+to speak the wrong words.**
+
+⭐ **Each field is LENGTH-PREFIXED before it is hashed.** Plain concatenation
+would give `voice="a", text="bc"` and `voice="ab", text="c"` the same address.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
-import secrets
 from pathlib import Path
 
-#: 128 bits as lowercase hex. Long enough that a collision is not a thing that
-#: happens, short enough to read back in a log line.
-_ID_BYTES = 16
+#: The addressing scheme's own name, hashed first and before anything else. ⛔ A
+#: change to WHAT is hashed, or to HOW it is encoded, bumps the number here --
+#: which is what stops a new scheme's address colliding with an old one's over
+#: different inputs. It is also published, so a caller can recompute an address
+#: itself and decide what to submit (`narrate.jobs`, and the manifest).
+ADDRESS_SCHEME = "narrate-address-1"
+
+#: The request fields the address covers, in the order they are hashed.
+ADDRESS_FIELDS = ("format", "voice", "text")
+
+#: `hashlib.sha256().hexdigest()` is 64 lowercase hexadecimal characters.
+ADDRESS_HEX_CHARS = 64
+
+#: The version of the record written beside each artifact. ⚠️ Internal to this
+#: component: nothing outside it reads the store directory, which is why this is
+#: not a published contract. A consumer reads `GET /v1/artifacts/<id>`.
+RECORD_VERSION = 1
+
+#: Every key a record must carry to be usable. A record missing one is treated
+#: as no record at all, so the artifact is synthesised again rather than
+#: described from a half-written file.
+RECORD_FIELDS = (
+    "record", "format", "voice", "bytes", "chunks",
+    "frames", "seconds", "sample_rate",
+    "engine", "engine_profile", "engine_model",
+)
 
 #: ⛔ A closed set. An id arrives from a URL path in `GET /v1/artifacts/<id>`,
 #: and this pattern is what stops `..`, a separator or an absolute path from
-#: ever reaching the filesystem. It admits exactly what `mint_id` produces.
-_ID_PATTERN = re.compile(r"\A[0-9a-f]{32}\Z")
+#: ever reaching the filesystem.
+#:
+#: ⭐ **64 hex is what `address_for` mints. 32 hex is still admitted**, and
+#: deliberately: a store written by version 0.1.0 holds randomly minted 32-hex
+#: artifacts, and widening the pattern is what keeps them fetchable by the ids
+#: their callers already recorded. ⚠️ **Nothing mints a 32-hex id any more**, and
+#: such an artifact carries no record, so it is never a cache hit.
+_ID_PATTERN = re.compile(r"\A(?:[0-9a-f]{32}|[0-9a-f]{64})\Z")
 
 
 class UnknownArtifact(KeyError):
     """No artifact by that id. Nothing was read."""
 
 
-def mint_id():
-    """A fresh opaque artifact id."""
-    return secrets.token_hex(_ID_BYTES)
+def address_for(text, voice, fmt):
+    """The content address of the artifact these inputs would produce.
+
+    Deterministic, and a pure function of its arguments: the same three values
+    always give the same 64-character address, on any host and in any process.
+    """
+    digest = hashlib.sha256()
+    for field in (ADDRESS_SCHEME, fmt, voice, text):
+        encoded = field.encode("utf-8")
+        # ⛔ Length-prefixed, so no choice of field values can be re-cut into a
+        # different tuple with the same digest.
+        digest.update(f"{len(encoded)}:".encode("ascii"))
+        digest.update(encoded)
+    return digest.hexdigest()
 
 
 def is_artifact_id(value):
-    """Whether `value` is a well-formed id this store could have minted."""
+    """Whether `value` is a well-formed id this store could hold."""
     return isinstance(value, str) and _ID_PATTERN.match(value) is not None
 
 
 class ArtifactStore:
-    """A directory of finished artifacts, addressed by opaque id."""
+    """A directory of finished artifacts, addressed by content.
+
+    Each artifact is two files: the audio, and a small JSON **record** beside
+    it saying what made it. ⭐ **The record is what makes a cache hit honest** --
+    a hit reports the engine, the duration and the chunk count of the artifact
+    that is actually on disk, rather than of the engine that happens to be
+    deployed at the moment somebody asks.
+
+    ⛔ **A cache hit reads the record and NOT the audio.** That is the point: a
+    job of three thousand cached segments must cost three thousand small reads,
+    never three thousand multi-megabyte ones.
+    """
 
     def __init__(self, directory, suffix="mp3"):
         self._directory = Path(directory)
@@ -66,13 +153,19 @@ class ArtifactStore:
     def path_for(self, artifact_id):
         """Filesystem path of `artifact_id`, whether or not it exists.
 
-        Raises `UnknownArtifact` for an id this store could not have minted.
-        The check is what keeps a caller-supplied path component from
-        resolving anywhere but inside the store.
+        Raises `UnknownArtifact` for an id this store could not hold. The check
+        is what keeps a caller-supplied path component from resolving anywhere
+        but inside the store.
         """
         if not is_artifact_id(artifact_id):
-            raise UnknownArtifact("artifact ids are 32 lowercase hexadecimal characters")
+            raise UnknownArtifact(
+                "artifact ids are 32 or 64 lowercase hexadecimal characters"
+            )
         return self._directory / f"{artifact_id}.{self._suffix}"
+
+    def record_path_for(self, artifact_id):
+        """Path of the JSON record beside `artifact_id`'s audio."""
+        return self.path_for(artifact_id).with_suffix(".json")
 
     def read(self, artifact_id):
         """Bytes of a finished artifact.
@@ -86,8 +179,43 @@ class ArtifactStore:
         except FileNotFoundError:
             raise UnknownArtifact("no artifact with that id") from None
 
-    def put(self, artifact_id, data):
-        """Write `data` as `artifact_id`, atomically. Returns the path.
+    def lookup(self, artifact_id):
+        """The record of a **complete** stored artifact, or `None`.
+
+        ⛔ This is the cache predicate, and it is deliberately strict: it
+        answers with a record only when the audio exists *and* a record beside
+        it parses *and* carries every field of `RECORD_FIELDS` at the current
+        version. Anything else -- no record, a truncated one, one from an older
+        scheme -- reads as a **miss**, so the segment is synthesised again and
+        both files are rewritten. ⭐ **A miss costs one synthesis; a half-read
+        record would cost a manifest that describes an artifact wrongly.**
+        """
+        try:
+            audio_path = self.path_for(artifact_id)
+        except UnknownArtifact:
+            return None
+        if not audio_path.exists():
+            return None
+        try:
+            raw = self.record_path_for(artifact_id).read_text(encoding="utf-8")
+            record = json.loads(raw)
+        except (OSError, ValueError):
+            return None
+        if not isinstance(record, dict):
+            return None
+        if record.get("record") != RECORD_VERSION:
+            return None
+        if any(field not in record for field in RECORD_FIELDS):
+            return None
+        return record
+
+    def put(self, artifact_id, data, record):
+        """Write `data` and its `record`, each atomically. Returns the path.
+
+        ⭐ **The audio goes first and the record second, so the RECORD is the
+        commit point.** `lookup` requires both, so a crash between the two
+        leaves a miss rather than a hit that cannot be described -- and the
+        next attempt overwrites both.
 
         The temporary is removed on every failure path, so a crashed or refused
         synthesis leaves the directory exactly as it found it.
@@ -96,16 +224,26 @@ class ArtifactStore:
             raise ValueError("refusing to store an empty artifact")
         destination = self.path_for(artifact_id)
         destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.parent / f".{destination.name}.tmp"
-        try:
-            temporary.write_bytes(data)
-            os.replace(temporary, destination)
-        finally:
-            # `os.replace` consumed the temporary on the happy path; this is
-            # for every other path, and it is why an interrupted run leaves
-            # neither a truncated artifact nor a stray temporary behind.
-            try:
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
+        _atomic_write(destination, data)
+        _atomic_write(
+            self.record_path_for(artifact_id),
+            json.dumps(dict(record, record=RECORD_VERSION),
+                       sort_keys=True).encode("utf-8"),
+        )
         return destination
+
+
+def _atomic_write(destination, data):
+    """`data` at `destination`, via a temporary sibling and one rename."""
+    temporary = destination.parent / f".{destination.name}.tmp"
+    try:
+        temporary.write_bytes(data)
+        os.replace(temporary, destination)
+    finally:
+        # `os.replace` consumed the temporary on the happy path; this is for
+        # every other path, and it is why an interrupted run leaves neither a
+        # truncated file nor a stray temporary behind.
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass

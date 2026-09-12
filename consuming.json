@@ -1,6 +1,6 @@
 {
   "consuming_api": 1,
-  "provides": 1,
+  "provides": 2,
   "component": "narrate-service",
   "not_yet_declared": [
     "voices"
@@ -32,7 +32,7 @@
         "kind": "volume",
         "read_only": false,
         "required": true,
-        "purpose": "the artifact store; it is not garbage-collected"
+        "purpose": "the artifact store: one audio file and one small JSON record per content address. It is not garbage-collected"
       }
     ],
     "runs_as": {
@@ -143,20 +143,50 @@
         "response": "audio/mpeg"
       },
       {
+        "method": "POST",
+        "path": "/v1/jobs",
+        "request": "application/json",
+        "response": "application/json",
+        "note": "a batch of {id, text} segments in, a manifest out. Never audio: fetch each artifact by its address"
+      },
+      {
         "method": "GET",
         "path": "/v1/artifacts/{id}",
         "response": "audio/mpeg"
       }
     ],
     "formats": ["mp3"],
-    "engine_reported_on": ["/healthz", "POST /v1/speech"],
+    "max_request_bytes": 4194304,
+    "engine_reported_on": ["/healthz", "POST /v1/speech", "POST /v1/jobs"],
     "engine_headers": [
       "Narrate-Engine",
-      "Narrate-Engine-Model"
+      "Narrate-Engine-Model",
+      "Narrate-Cached"
     ],
+    "manifest": {
+      "versioned_by": "provides",
+      "one_entry_per_submitted_id": true,
+      "http_status_for_a_well_formed_job": 200,
+      "segment_statuses": ["synthesised", "cached", "failed", "skipped"],
+      "failure_reasons": ["engine_unavailable", "engine_failed", "not_synthesisable"],
+      "halts_the_job": ["engine_unavailable"],
+      "max_segments": 5000
+    },
+    "cache": {
+      "content_addressed": true,
+      "idempotent": true,
+      "scheme": "narrate-address-1",
+      "hash": "sha256",
+      "over": ["format", "voice", "text"],
+      "encoding": "utf-8, each field length-prefixed as '<bytes>:' before the bytes",
+      "order": ["narrate-address-1", "format", "voice", "text"],
+      "engine_in_address": false,
+      "note": "the engine is deliberately not in the address, so moving between the cpu and gpu profiles of one model does not re-synthesise a corpus; a cached artifact reports the engine that actually made it"
+    },
     "caller_obligations": [
       "gate personal data out of the text before the request; this service never inspects it",
-      "place artifacts yourself; this service never writes into a caller's tree"
+      "place artifacts yourself; this service never writes into a caller's tree",
+      "read the manifest's counts: a well-formed job answers 200 whatever its segments did"
     ]
   }
 }

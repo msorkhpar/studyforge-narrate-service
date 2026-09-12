@@ -31,6 +31,15 @@ already got right are carried over unchanged:
   stops mid-sentence — which is why this is the failure worth engineering
   against.
 
+And one the service adds:
+
+- ⭐ **Synthesis is idempotent.** An artifact's id is a **content address** over
+  the format, the voice and the text, so re-submitting an unchanged segment
+  synthesises nothing and returns the same id. Change one segment's prose and
+  one segment is re-synthesised. ⚠️ **The address is over the request, never
+  over the audio** — a speech model may emit different bytes for identical
+  input, so a digest of the output would be a cache that never hits.
+
 ## ⛔ Two rules for anyone calling this
 
 1. **Gate your text before the request, never after.** This service does not
@@ -49,10 +58,17 @@ docker compose up -d --build
 
 curl -fsS http://127.0.0.1:8870/healthz
 
+# one text, one file, in one round trip
 curl -fsS -X POST http://127.0.0.1:8870/v1/speech \
      -H 'Content-Type: application/json' \
      -d '{"text": "Synthesis is behind an API of its own."}' \
      -o speech.mp3
+
+# a batch of keyed segments, and a manifest of addresses back
+curl -fsS -X POST http://127.0.0.1:8870/v1/jobs \
+     -H 'Content-Type: application/json' \
+     -d '{"segments": [{"id": "u01-s001", "text": "The first speech unit."},
+                       {"id": "u01-s002", "text": "The second speech unit."}]}'
 ```
 
 ⛔ **The engine is not published** — it is reachable only from the compose
@@ -86,8 +102,10 @@ deployment said made it.
 
 [`consuming.json`](consuming.json) is the machine-readable contract: image,
 ports and their host binding, mounts, uid, every environment variable with its
-default, the healthcheck, and both profiles with their requirements and the GPU
-one's opt-in. It names its own gap (`not_yet_declared`) rather than leaving you
+default, the healthcheck, both profiles with their requirements and the GPU
+one's opt-in, and — since `provides: 2` — the manifest's closed sets and the
+addressing scheme, which is exactly enough to compute an address yourself
+before you submit anything. It names its own gap (`not_yet_declared`) rather than leaving you
 to guess. Reading a Dockerfile is the first step toward forking it.
 
 ### Without the container
@@ -119,15 +137,15 @@ deployment is down.
 | `narrate/server.py` | the three routes |
 | `narrate/synthesis.py` | split → synthesise → verify → store, in that order |
 | `narrate/chunking.py` | where a long text is cut, and why there |
-| `narrate/artifacts.py` | the atomic write, and the opaque id |
+| `narrate/artifacts.py` | the atomic write, and the content address |
+| `narrate/jobs.py` | the batch job, and what its manifest says |
 | `narrate/mpeg.py` | the gate that makes *playable* a checked claim, not a hope |
 | `narrate/engine/` | the engine seam — the contract, the registry, and Kokoro over HTTP |
 | `narrate/config.py` | every setting, from the environment |
 
 ## What is not here yet
 
-A batch job API, content-addressed caching, and a voice catalogue — which is
-also the one part of `consuming.json` that is still absent, and the file says
-so itself. Each is named in [`docs/api.md`](docs/api.md) with where it goes, so
-that nothing is built against something absent — or, worse, against something
-half-present.
+A voice catalogue — which is also the one part of `consuming.json` that is
+still absent, and the file says so itself. It is named in
+[`docs/api.md`](docs/api.md) with where it goes, so that nothing is built
+against something absent — or, worse, against something half-present.

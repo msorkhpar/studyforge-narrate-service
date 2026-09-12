@@ -23,7 +23,11 @@ from pathlib import Path
 
 import pytest
 
+import narrate
+from narrate import PROVIDES
 from narrate import config as config_module
+from narrate import jobs as jobs_module
+from narrate.artifacts import ADDRESS_FIELDS, ADDRESS_SCHEME
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -57,8 +61,20 @@ class TestTheFileItself:
         the three is the defect the file exists to prevent (spec, Ruling 5).
         """
         assert contract["consuming_api"] == 1
-        assert contract["provides"] == 1
+        # ⛔ ONE source. `narrate.PROVIDES` is what `/healthz` and every
+        # manifest report, so a bump in one place and not the other is a
+        # failure here rather than a consumer's surprise.
+        assert contract["provides"] == PROVIDES
         assert contract["component"] == "narrate-service"
+
+    def test_the_promise_version_is_not_the_build_version(self, contract):
+        """⚠️ Three different questions and none substitutes for another.
+
+        The pin file records which BUILD, `provides` which PROMISE, and
+        `consuming_api` this file's own SCHEMA (spec R9, Ruling 5).
+        """
+        assert str(contract["provides"]) != narrate.__version__
+        assert contract["provides"] != contract["consuming_api"]
 
     def test_the_half_this_task_does_not_own_is_declared_absent(self, contract):
         """⚠️ Voices are `NS-04`'s half. Absence is NAMED, not left to inference.
@@ -215,3 +231,87 @@ class TestTheDeclarationAgreesWithTheCode:
         assert mount["container_path"] in (ROOT / "Dockerfile").read_text(
             encoding="utf-8"
         )
+
+
+class TestTheBatchDeclarationAgreesWithTheCode:
+    """⛔ The third drift, and it is the one `NS-02` added.
+
+    A manifest is a WIRE shape: it takes no contract row of its own and is
+    versioned by `provides` (Ruling 330(b)). ⭐ **So the only thing standing
+    between a consumer and a silently changed promise is that the declaration
+    and the module constants are asserted to be the same lists.**
+    """
+
+    @pytest.fixture
+    def api(self, contract):
+        return contract["api"]
+
+    def test_the_batch_route_is_declared(self, api):
+        paths = [(route["method"], route["path"]) for route in api["routes"]]
+        assert ("POST", "/v1/jobs") in paths
+        assert ("POST", "/v1/speech") in paths
+
+    def test_every_declared_route_is_a_literal_the_server_matches_on(self, api):
+        """⭐ Read from the server module's own text, not from a second list.
+
+        Every path this file declares appears in `server.py` as a quoted
+        literal -- `/v1/artifacts/{id}` as its prefix constant. A route
+        declared here and never routed there fails, which is the drift a
+        consumer would otherwise find by getting a `404`.
+        """
+        served = (ROOT / "narrate" / "server.py").read_text(encoding="utf-8")
+        for route in api["routes"]:
+            literal = route["path"].replace("{id}", "")
+            assert f'"{literal}"' in served, literal
+
+    def test_the_status_closed_set_is_the_one_the_runner_uses(self, api):
+        assert api["manifest"]["segment_statuses"] == list(
+            jobs_module.SEGMENT_STATUSES
+        )
+
+    def test_the_failure_reason_closed_set_is_the_one_the_runner_uses(self, api):
+        assert api["manifest"]["failure_reasons"] == list(
+            jobs_module.FAILURE_REASONS
+        )
+
+    def test_the_declared_segment_cap_is_the_module_constant(self, api):
+        assert api["manifest"]["max_segments"] == jobs_module.MAX_SEGMENTS
+
+    def test_the_declared_body_cap_is_the_module_constant(self, api):
+        from narrate.server import MAX_BODY_BYTES
+        assert api["max_request_bytes"] == MAX_BODY_BYTES
+
+    def test_only_engine_unavailable_halts_a_job_and_it_is_declared(self, api):
+        halts = api["manifest"]["halts_the_job"]
+        assert halts == ["engine_unavailable"]
+        assert set(halts) <= set(jobs_module.FAILURE_REASONS)
+
+    def test_the_declared_addressing_is_what_the_code_actually_hashes(self, api):
+        cache = api["cache"]
+        assert cache["scheme"] == ADDRESS_SCHEME
+        assert cache["over"] == list(ADDRESS_FIELDS)
+        assert cache["order"] == jobs_module.ADDRESSING["order"]
+        assert cache["encoding"] == jobs_module.ADDRESSING["encoding"]
+
+    def test_the_engine_is_declared_ABSENT_from_the_address(self, api):
+        """⛔ A consumer plans a redeployment around this fact.
+
+        If the engine were in the address, moving between the cpu and gpu
+        profiles of one model would re-synthesise an entire corpus.
+        """
+        assert api["cache"]["engine_in_address"] is False
+        assert "engine" not in api["cache"]["over"]
+
+    def test_the_declared_idempotence_is_not_a_claim_the_code_contradicts(self, api):
+        assert api["cache"]["content_addressed"] is True
+        assert api["cache"]["idempotent"] is True
+        assert "cached" in jobs_module.SEGMENT_STATUSES
+
+    def test_the_manifest_declares_that_a_well_formed_job_is_always_two_hundred(self, api):
+        assert api["manifest"]["http_status_for_a_well_formed_job"] == 200
+        assert api["manifest"]["one_entry_per_submitted_id"] is True
+
+    def test_the_manifest_declares_the_key_that_versions_it(self, api):
+        """⛔ Ruling 330(b): the promise register, not a tenth `*_api`."""
+        assert api["manifest"]["versioned_by"] == "provides"
+        assert "manifest_api" not in api

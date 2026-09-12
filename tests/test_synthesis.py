@@ -127,19 +127,29 @@ def test_a_failure_on_a_later_chunk_stores_nothing(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
-def test_two_identical_requests_are_two_artifacts(tmp_path):
-    """⛔ Deliberate: this service does not deduplicate.
+def test_two_identical_requests_are_ONE_artifact_and_one_synthesis(tmp_path):
+    """⭐ The inversion of `NS-01`'s `test_two_identical_requests_are_two_artifacts`.
 
-    Content addressing and the cache it enables are the next task's. Asserting
-    the absence keeps a caller from building on idempotence that is not there.
+    That test pinned this service's deliberate NON-idempotence so that the
+    change would be visible rather than silent. Here is the change: one
+    address, one stored artifact, and ⛔ **the second engine is never called at
+    all** -- which is the property, rather than merely getting the same id back.
     """
     store = ArtifactStore(tmp_path)
-    first = synthesise("Same prose.", "am_liam", "mp3", FakeEngine(), store,
+    first_engine, second_engine = FakeEngine(), FakeEngine()
+    first = synthesise("Same prose.", "am_liam", "mp3", first_engine, store,
                        1800, FORMAT_MEDIA_TYPES)
-    second = synthesise("Same prose.", "am_liam", "mp3", FakeEngine(), store,
+    second = synthesise("Same prose.", "am_liam", "mp3", second_engine, store,
                         1800, FORMAT_MEDIA_TYPES)
-    assert first.artifact_id != second.artifact_id
-    assert len(list(tmp_path.iterdir())) == 2
+
+    assert first.artifact_id == second.artifact_id
+    assert len(first_engine.calls) == 1
+    assert second_engine.calls == []
+    assert first.cached is False
+    assert second.cached is True
+    # One audio file and one record beside it. Not two of either.
+    assert sorted(p.suffix for p in tmp_path.iterdir()) == [".json", ".mp3"]
+    assert second.audio == first.audio
 
 
 class TestTheArtifactRecordsWhatMadeIt:
@@ -182,7 +192,12 @@ class TestTheArtifactRecordsWhatMadeIt:
 
 
 class _NullStore:
-    def put(self, artifact_id, audio):
+    """A store that never holds anything, so every lookup is a miss."""
+
+    def lookup(self, artifact_id):
+        return None
+
+    def put(self, artifact_id, audio, record):
         return None
 
 
