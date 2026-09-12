@@ -1,0 +1,88 @@
+# narrate-service: the service, and the engine it is the only client of.
+#
+#     docker compose up -d --build
+#     curl -fsS -X POST http://127.0.0.1:8870/v1/speech \
+#          -H 'Content-Type: application/json' \
+#          -d '{"text": "Synthesis is behind an API of its own."}' \
+#          -o speech.mp3
+#
+# ⛔ THE ENGINE IS NOT PUBLISHED, and that is the point of this repository.
+# What existed before was a caller posting straight into a speech engine's own
+# container; every caller therefore knew the engine's address, its request
+# shape and its input limit, and swapping the engine was a change to every
+# caller. Here the engine has no `ports:` at all: it is reachable only from
+# this compose project's network, only by the service, and a caller has one
+# address to know.
+#
+# ⛔ THE SERVICE BINDS 127.0.0.1 ON THE HOST. Never 0.0.0.0: it has no
+# authentication of its own. Publishing it on a routable interface is a
+# decision somebody makes explicitly, in front of something that authenticates.
+#
+# ⛔ NO DOCKER SOCKET IS MOUNTED ANYWHERE. Not behind a flag, not "only
+# locally". Neither container needs one and neither gets one.
+#
+# ⚠️ THE ENGINE PROFILE HERE IS THE ONE THAT EXISTS TODAY, CARRIED OVER, AND IT
+# IS GPU-ONLY. It reserves every NVIDIA device on the host and its image is a
+# build for one card generation. That is fine as *a* deployment and is not
+# acceptable as *the* deployment -- a CPU path that works anywhere, with GPU as
+# an opt-in profile, is the next piece of work and is deliberately not
+# attempted here. Stated rather than left to be discovered on a machine with no
+# GPU, where this file does not come up.
+name: narrate-service
+
+services:
+  engine:
+    # Pinned by tag AND digest, for the same reason the Dockerfile is.
+    image: ghcr.io/remsky/kokoro-fastapi-gpu:v0.8.2-cu128-amd64@sha256:a95e53e3ed3da1c73ca7a36e4608c451f19117205d28252bad1f4c07062ec387
+    # ⛔ No `ports:`. Reachable only from this project's network.
+    expose:
+      - "8880"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  narrate:
+    build:
+      context: .
+    image: narrate-service:local
+    depends_on:
+      - engine
+    environment:
+      # The service's own name for the engine is a compose service name, so
+      # the address is a fact about this deployment and never a fact about
+      # anybody's machine.
+      NARRATE_ENGINE_URL: http://engine:8880/v1
+    # Loopback only on the host. See the header.
+    ports:
+      - "127.0.0.1:8870:8870"
+    volumes:
+      # Artifacts outlive a container restart. A named volume rather than a
+      # bind: a bind would need a host path, and a host path in a tracked file
+      # is somebody's home directory.
+      - artifacts:/var/lib/narrate/artifacts
+    healthcheck:
+      # `python3` rather than curl: the image has no curl, deliberately -- a
+      # service that is standard library only does not acquire an HTTP client
+      # to check on itself.
+      test:
+        - CMD
+        - python3
+        - -c
+        - |
+          import urllib.request, sys
+          with urllib.request.urlopen("http://127.0.0.1:8870/healthz", timeout=5) as r:
+              sys.exit(0 if r.status == 200 else 1)
+      start_period: 10s
+      start_interval: 1s
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  artifacts:

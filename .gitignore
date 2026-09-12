@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+# The service's own output. Artifacts are synthesised, never committed: audio
+# is not byte-for-byte reproducible, so a committed artifact is a binary that
+# can never be re-derived to compare against.
+artifacts/
+.scratch/

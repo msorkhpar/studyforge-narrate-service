@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "narrate-service"
+version = "0.1.0"
+description = "Synthesis behind an HTTP API of its own."
+requires-python = ">=3.12"
+# Standard library only. The engine speaks HTTP, so urllib.request is a
+# complete client and there is nothing to install to run this service.
+dependencies = []
+
+[project.optional-dependencies]
+# Test-only. Nothing here is imported by anything under narrate/.
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["narrate*"]
+
+[tool.pytest.ini_options]
+# rootdir on sys.path, so `from tests.support import ...` resolves without an
+# installed package and without a conftest doing path surgery.
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"
