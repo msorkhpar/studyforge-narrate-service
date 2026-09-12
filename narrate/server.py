@@ -35,7 +35,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from . import __version__
 from .artifacts import ArtifactStore, UnknownArtifact
 from .config import FORMAT_MEDIA_TYPES, SUPPORTED_FORMATS
-from .engine import EngineError, EngineUnavailable, KokoroEngine
+from .engine import EngineError, EngineUnavailable, build_engine, check_engine
 from .synthesis import UnsupportedFormat, synthesise
 
 #: Refuse a body larger than this before reading it. Synthesis is slow and a
@@ -73,13 +73,17 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _health(self):
         service = self.server.narrate
-        return self._json(HTTPStatus.OK, {
+        payload = {
             "status": "ok",
             "version": __version__,
-            "engine": service.engine.name,
             "engine_reachable": service.engine.reachable(),
             "formats": list(SUPPORTED_FORMATS),
-        })
+        }
+        # ⭐ The SAME three fields a synthesised artifact is stamped with, from
+        # the same `identity()`. A caller can read them here before it sends
+        # anything and compare them to what came back with an artifact.
+        payload.update(service.engine.identity().as_dict())
+        return self._json(HTTPStatus.OK, payload)
 
     def _artifact(self, artifact_id):
         service = self.server.narrate
@@ -136,6 +140,12 @@ class _Handler(BaseHTTPRequestHandler):
                 "Narrate-Chunks": str(summary["chunks"]),
                 "Narrate-Voice": summary["voice"],
                 "Narrate-Seconds": str(summary["seconds"]),
+                # ⛔ On the ARTIFACT, not only on /healthz: a caller that keeps
+                # an artifact must be able to record what produced it without
+                # a second request to an endpoint that may by then be
+                # answering for a redeployed engine.
+                "Narrate-Engine": result.identity.label,
+                "Narrate-Engine-Model": result.identity.model,
             },
         )
 
@@ -218,7 +228,12 @@ def build_server(config, engine=None, log=None):
     running engine and without a GPU.
     """
     if engine is None:
-        engine = KokoroEngine(config.engine_url, config.timeout)
+        engine = build_engine(config)
+    else:
+        # ⛔ An injected engine is checked too, and at startup. This parameter
+        # is public; an object missing a member would otherwise surface as a
+        # 500 on the first request rather than as a refusal to start.
+        check_engine(engine)
     service = _Service(
         engine=engine,
         store=ArtifactStore(config.artifact_dir),

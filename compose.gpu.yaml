@@ -1,0 +1,49 @@
+# ⭐ THE GPU PROFILE. An OVERLAY on compose.yaml, and opt-in by naming it:
+#
+#     docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+#
+# ⛔ IT IS A SEPARATE FILE RATHER THAN A `profiles:` KEY, and the reason is the
+# property being protected. A compose profile is selected by an environment
+# variable (`COMPOSE_PROFILES`) as readily as by a flag, so the machine with no
+# GPU is one stale shell export away from trying to start a device
+# reservation it cannot satisfy. A second file cannot be selected by
+# accident: it is named on the command line or it is not in play, and
+# `docker compose up` -- the command in every README and every script that
+# does not know about this file -- is always the CPU deployment.
+#
+# ⭐ WHAT THIS OVERLAY CHANGES, IN FULL. There is nothing else, and that is the
+# demonstration that switching profiles is a deployment choice:
+#
+#   1. the engine image                     CPU build -> CUDA build
+#   2. a device reservation                 absent    -> every NVIDIA device
+#   3. the profile the service reports      cpu       -> gpu
+#
+# ⛔ NOT CHANGED: the service's image, its code, its adapter, the engine's
+# address, the request shape, the published port, the volume, the healthcheck.
+# `docker compose -f compose.yaml -f compose.gpu.yaml config` prints the merged
+# result and the diff against `docker compose config` is those three lines.
+#
+# ⚠️ WHAT THIS PROFILE REQUIRES, and it is why it is not the default: an NVIDIA
+# GPU, the host driver, and the NVIDIA container runtime registered with
+# docker. On a host missing any of the three, `up` fails at the reservation.
+# ⛔ `count: all` reserves EVERY NVIDIA device on the host, which is carried
+# over from the deployment this repository replaced rather than chosen here --
+# a host that runs anything else on its GPU should pin `device_ids` instead.
+
+services:
+  engine:
+    image: ghcr.io/remsky/kokoro-fastapi-gpu:v0.8.2-cu128-amd64@sha256:a95e53e3ed3da1c73ca7a36e4608c451f19117205d28252bad1f4c07062ec387
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  narrate:
+    environment:
+      # ⚠️ Declared, not detected -- see compose.yaml. This is the deployment
+      # saying which engine image it started, so that an artifact made here is
+      # distinguishable afterwards from one made on the CPU profile.
+      NARRATE_ENGINE_PROFILE: gpu

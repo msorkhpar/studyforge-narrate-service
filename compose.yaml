@@ -1,10 +1,23 @@
 # narrate-service: the service, and the engine it is the only client of.
 #
+# ⭐ THIS FILE IS THE CPU PROFILE, AND THE CPU PROFILE IS THE DEFAULT. It needs
+# no GPU, no NVIDIA driver and no container runtime beyond docker itself.
+#
 #     docker compose up -d --build
 #     curl -fsS -X POST http://127.0.0.1:8870/v1/speech \
 #          -H 'Content-Type: application/json' \
 #          -d '{"text": "Synthesis is behind an API of its own."}' \
 #          -o speech.mp3
+#
+# ⭐ THE GPU PROFILE IS AN OVERLAY AND IS OPT-IN BY NAMING A SECOND FILE:
+#
+#     docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+#
+# ⛔ SWITCHING PROFILES CHANGES NO CODE, and that is checkable rather than
+# claimed: the two profiles run the same image of this service, the same
+# adapter (`narrate/engine/kokoro.py`) and the same request shape. What the
+# overlay changes is the engine image, the device reservation, and the profile
+# label the service reports. `docker compose config` prints the difference.
 #
 # ⛔ THE ENGINE IS NOT PUBLISHED, and that is the point of this repository.
 # What existed before was a caller posting straight into a speech engine's own
@@ -20,30 +33,26 @@
 #
 # ⛔ NO DOCKER SOCKET IS MOUNTED ANYWHERE. Not behind a flag, not "only
 # locally". Neither container needs one and neither gets one.
-#
-# ⚠️ THE ENGINE PROFILE HERE IS THE ONE THAT EXISTS TODAY, CARRIED OVER, AND IT
-# IS GPU-ONLY. It reserves every NVIDIA device on the host and its image is a
-# build for one card generation. That is fine as *a* deployment and is not
-# acceptable as *the* deployment -- a CPU path that works anywhere, with GPU as
-# an opt-in profile, is the next piece of work and is deliberately not
-# attempted here. Stated rather than left to be discovered on a machine with no
-# GPU, where this file does not come up.
 name: narrate-service
 
 services:
   engine:
-    # Pinned by tag AND digest, for the same reason the Dockerfile is.
-    image: ghcr.io/remsky/kokoro-fastapi-gpu:v0.8.2-cu128-amd64@sha256:a95e53e3ed3da1c73ca7a36e4608c451f19117205d28252bad1f4c07062ec387
+    # ⭐ The CPU build, at the same upstream version as the GPU build the
+    # overlay pins. Pinned by tag AND digest, for the same reason the
+    # Dockerfile is: a tag is a moving pointer and the digest is what makes a
+    # deployment reproducible.
+    #
+    # ⚠️ CPU synthesis is slower than GPU synthesis by a large factor, and the
+    # service's per-chunk timeout (NARRATE_TIMEOUT_SECONDS, 600s by default)
+    # is sized for it. Slower is the cost of running anywhere; not running is
+    # not a cost anybody chose.
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.8.2@sha256:8545e2a4ae8d040749a369a848236fcf768aabc3b5b7a89451afa6507101c59a
     # ⛔ No `ports:`. Reachable only from this project's network.
     expose:
       - "8880"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # ⛔ NO `deploy.resources.reservations.devices` HERE, and its absence is
+    # the whole property. A device reservation naming a vendor driver makes
+    # this file fail to come up on a machine that has neither.
     restart: unless-stopped
 
   narrate:
@@ -53,10 +62,19 @@ services:
     depends_on:
       - engine
     environment:
+      # Which adapter. A closed set of one today; validated at startup so an
+      # unknown value is refused naming what is permitted, never accepted.
+      NARRATE_ENGINE: kokoro
       # The service's own name for the engine is a compose service name, so
       # the address is a fact about this deployment and never a fact about
-      # anybody's machine.
+      # anybody's machine. ⭐ It is IDENTICAL under both profiles, which is
+      # why the overlay does not touch it.
       NARRATE_ENGINE_URL: http://engine:8880/v1
+      # ⚠️ A DECLARATION, NOT A DETECTION. The service is on the far side of
+      # HTTP from its engine and cannot see that engine's hardware. This says
+      # which engine image the deployment chose, and the service reports it
+      # on /healthz and on every artifact so a caller can record it.
+      NARRATE_ENGINE_PROFILE: cpu
     # Loopback only on the host. See the header.
     ports:
       - "127.0.0.1:8870:8870"

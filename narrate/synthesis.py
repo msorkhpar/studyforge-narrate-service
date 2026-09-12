@@ -35,7 +35,7 @@ from . import mpeg
 from .artifacts import mint_id
 from .chunking import chunk_text
 from .config import SUPPORTED_FORMATS
-from .engine import EngineFailed
+from .engine import EngineFailed, EngineIdentity
 
 
 class UnsupportedFormat(ValueError):
@@ -50,6 +50,9 @@ class Synthesised:
     media_type: str
     fmt: str
     voice: str
+    #: ⭐ Which engine made it, recorded at the moment it was made. A caller
+    #: that keeps an artifact keeps this beside it -- see `engine/base.py`.
+    identity: EngineIdentity
     chunks: int
     audio: bytes
     frames: int
@@ -64,6 +67,9 @@ class Synthesised:
             "format": self.fmt,
             "media_type": self.media_type,
             "voice": self.voice,
+            "engine": self.identity.engine,
+            "engine_profile": self.identity.profile,
+            "engine_model": self.identity.model,
             "chunks": self.chunks,
             "bytes": len(self.audio),
             "seconds": self.seconds,
@@ -82,6 +88,10 @@ def synthesise(text, voice, fmt, engine, store, chunk_chars, media_types):
         raise UnsupportedFormat(f"format must be one of: {permitted}")
 
     chunks = chunk_text(text, chunk_chars)
+
+    # ⭐ Read BEFORE the first chunk, so every chunk of one artifact is
+    # attributed to the engine that actually started it.
+    identity = engine.identity()
 
     pieces = [engine.synthesize_chunk(chunk, voice, fmt) for chunk in chunks]
     audio = b"".join(pieces)
@@ -102,6 +112,7 @@ def synthesise(text, voice, fmt, engine, store, chunk_chars, media_types):
         media_type=media_types[fmt],
         fmt=fmt,
         voice=voice,
+        identity=identity,
         chunks=len(chunks),
         audio=audio,
         frames=shape["frames"],

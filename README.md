@@ -60,12 +60,35 @@ project's network, only by this service. ⛔ **The service binds `127.0.0.1` on
 the host**: it has no authentication of its own. ⛔ **No docker socket is
 mounted anywhere.**
 
-⚠️ **Today's engine profile is GPU-only.** It is the deployment that existed
-before, carried over unchanged, and it reserves every NVIDIA device on the
-host. A CPU path that works anywhere, with GPU as an opt-in profile, is the
-next piece of work and is deliberately not attempted here — stated rather than
-left to be discovered on a machine with no GPU, where `compose.yaml` does not
-come up.
+### Profiles — CPU by default, GPU by opting in
+
+⭐ **`docker compose up` is the CPU deployment and it needs no GPU, no vendor
+driver and no container runtime beyond docker.** The GPU deployment is opt-in
+by naming a second file, so nothing selects it by accident:
+
+```bash
+docker compose -f compose.yaml -f compose.gpu.yaml up -d --build
+```
+
+⛔ **Switching profiles changes no code.** Both run the same image of this
+service, the same adapter and the same request shape; the overlay changes the
+engine image, the device reservation and the reported profile label, and
+`docker compose config` prints exactly that difference. ⚠️ **CPU synthesis is
+slower** — that is the trade, and slower everywhere beats fast nowhere else.
+
+⚠️ **`engine_profile` is what the deployment DECLARED, not something the
+service detected.** It is on the far side of HTTP from its engine and cannot
+see that engine's hardware. What it guarantees is that the same value appears
+on `/healthz` and on every artifact, so an artifact you keep carries what the
+deployment said made it.
+
+### ⛔ Don't read this repository's compose files to consume it
+
+[`consuming.json`](consuming.json) is the machine-readable contract: image,
+ports and their host binding, mounts, uid, every environment variable with its
+default, the healthcheck, and both profiles with their requirements and the GPU
+one's opt-in. It names its own gap (`not_yet_declared`) rather than leaving you
+to guess. Reading a Dockerfile is the first step toward forking it.
 
 ### Without the container
 
@@ -98,12 +121,13 @@ deployment is down.
 | `narrate/chunking.py` | where a long text is cut, and why there |
 | `narrate/artifacts.py` | the atomic write, and the opaque id |
 | `narrate/mpeg.py` | the gate that makes *playable* a checked claim, not a hope |
-| `narrate/engine/` | the engine seam. One implementation: Kokoro over HTTP |
+| `narrate/engine/` | the engine seam — the contract, the registry, and Kokoro over HTTP |
 | `narrate/config.py` | every setting, from the environment |
 
 ## What is not here yet
 
-A batch job API, content-addressed caching, a CPU profile, a voice catalogue,
-and a machine-readable `consuming.json`. Each is named in
-[`docs/api.md`](docs/api.md) with where it goes, so that nothing is built
-against something absent — or, worse, against something half-present.
+A batch job API, content-addressed caching, and a voice catalogue — which is
+also the one part of `consuming.json` that is still absent, and the file says
+so itself. Each is named in [`docs/api.md`](docs/api.md) with where it goes, so
+that nothing is built against something absent — or, worse, against something
+half-present.

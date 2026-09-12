@@ -14,6 +14,8 @@ more constant when something needs it.
 
 from __future__ import annotations
 
+from narrate.engine import EngineIdentity
+
 #: MPEG-1 Layer III, 128 kbit/s, 44.1 kHz, no padding, joint stereo.
 FRAME_SAMPLE_RATE = 44100
 FRAME_BITRATE = 128_000
@@ -53,11 +55,25 @@ class FakeEngine:
 
     name = "fake"
 
-    def __init__(self, per_chunk=None, fail_with=None, reachable_=True):
+    def __init__(self, per_chunk=None, fail_with=None, reachable_=True,
+                 profile="unknown", model="fake-1"):
         self._per_chunk = per_chunk if per_chunk is not None else mpeg_bytes(1)
         self._fail_with = fail_with
         self._reachable = reachable_
+        self._profile = profile
+        self._model = model
         self.calls = []
+
+    def identity(self):
+        """⭐ A SECOND engine family satisfying the same contract.
+
+        Not a stand-in for the real one -- what it demonstrates is narrow and
+        real: nothing above `narrate.engine` reads `KokoroEngine`, so an
+        adapter for another engine reaches every route unchanged.
+        """
+        return EngineIdentity(
+            engine=self.name, profile=self._profile, model=self._model
+        )
 
     def synthesize_chunk(self, text, voice, fmt):
         self.calls.append({"text": text, "voice": voice, "format": fmt})

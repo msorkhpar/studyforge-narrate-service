@@ -16,7 +16,12 @@ import threading
 import pytest
 
 from narrate.config import Config
-from narrate.engine import EngineFailed, EngineUnavailable
+from narrate.engine import (
+    EngineFailed,
+    EngineUnavailable,
+    NotAnEngine,
+    UnknownEngine,
+)
 from narrate.server import MAX_BODY_BYTES, build_server
 from tests.support import FakeEngine, mpeg_bytes
 
@@ -302,3 +307,107 @@ def test_a_response_never_carries_the_text_that_was_sent(service):
     assert response.status == 502
     assert identifier not in data.decode("utf-8")
     assert identifier not in str(dict(response.getheaders()))
+
+
+class TestTheEngineIsReported:
+    """⛔ `NS-03`: *"the engine in use is reported by the service so a caller
+    can record which one produced an artifact."*
+
+    ⭐ **Two places, and both are needed.** `/healthz` answers *what will this
+    deployment use*, which a caller reads before it sends anything. The
+    artifact's own headers answer *what made THIS file* -- and that question
+    cannot be answered by a later `/healthz`, because by then the deployment
+    may have been restarted onto the other profile.
+    """
+
+    def test_healthz_reports_the_engine_family_profile_and_model(self, service):
+        request = service(engine=FakeEngine(profile="cpu", model="fake-1"))
+        response, data = request("GET", "/healthz")
+        payload = json.loads(data)
+        assert payload["engine"] == "fake"
+        assert payload["engine_profile"] == "cpu"
+        assert payload["engine_model"] == "fake-1"
+
+    def test_a_synthesised_artifact_carries_the_engine_in_its_headers(self, service):
+        request = service(engine=FakeEngine(profile="gpu", model="fake-1"))
+        response, data = request("POST", "/v1/speech", {"text": "Prose."})
+        assert response.status == 200
+        assert response.getheader("Narrate-Engine") == "fake/gpu"
+        assert response.getheader("Narrate-Engine-Model") == "fake-1"
+
+    def test_the_two_reports_agree_within_one_deployment(self, service):
+        request = service(engine=FakeEngine(profile="cpu", model="fake-1"))
+        health = json.loads(request("GET", "/healthz")[1])
+        response, _ = request("POST", "/v1/speech", {"text": "Prose."})
+        assert response.getheader("Narrate-Engine") == (
+            f"{health['engine']}/{health['engine_profile']}"
+        )
+        assert response.getheader("Narrate-Engine-Model") == health["engine_model"]
+
+    def test_the_declared_profile_follows_the_deployment_and_nothing_else(self, service):
+        """⭐ The same engine class, two profiles, no code path in between."""
+        seen = set()
+        for profile in ("cpu", "gpu", "unknown"):
+            request = service(engine=FakeEngine(profile=profile))
+            response, _ = request("POST", "/v1/speech", {"text": "Prose."})
+            seen.add(response.getheader("Narrate-Engine"))
+        assert seen == {"fake/cpu", "fake/gpu", "fake/unknown"}
+
+    def test_no_engine_header_names_an_address(self, service):
+        """⛔ A caller must not learn the engine's address from an artifact."""
+        request = service(engine=FakeEngine())
+        response, _ = request("POST", "/v1/speech", {"text": "Prose."})
+        for name, value in response.getheaders():
+            assert "8880" not in value
+            assert "http://" not in value
+
+
+class TestASecondEngineFamilyReachesEveryRouteUnchanged:
+    """⛔ *"Adding a different speech engine later must not touch the API."*
+
+    ⚠️ **`FakeEngine` is a test double and is NOT offered as evidence that some
+    other speech engine works.** What these assert is the narrow, real thing a
+    suite can assert: an adapter of a different family, satisfying the contract
+    in `engine/base.py` and nothing else, is served by every route without one
+    line of the API, the chunker, the store or the server changing -- because
+    nothing above `narrate.engine` imports `KokoroEngine` at all.
+    """
+
+    def test_no_module_above_the_engine_package_imports_a_concrete_engine(self):
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parents[1] / "narrate"
+        offenders = [
+            path.name for path in root.glob("*.py")
+            if "KokoroEngine" in path.read_text(encoding="utf-8")
+        ]
+        assert offenders == []
+
+    def test_every_route_serves_an_adapter_of_another_family(self, service):
+        request = service(engine=FakeEngine(profile="cpu", model="other-2"))
+        assert json.loads(request("GET", "/healthz")[1])["engine"] == "fake"
+        response, audio = request("POST", "/v1/speech", {"text": "Prose."})
+        assert response.status == 200
+        artifact_id = response.getheader("Narrate-Artifact-Id")
+        again, refetched = request("GET", f"/v1/artifacts/{artifact_id}")
+        assert again.status == 200
+        assert refetched == audio
+
+
+class TestAnInjectedEngineIsCheckedAtStartup:
+    def test_an_object_missing_a_member_refuses_to_start(self, tmp_path):
+        """⛔ Not a 500 on the first request. `build_server` is public."""
+        class Halfway:
+            name = "halfway"
+
+            def reachable(self):  # pragma: no cover
+                return True
+
+        config = Config(artifact_dir=tmp_path, bind="127.0.0.1", port=0)
+        with pytest.raises(NotAnEngine):
+            build_server(config, engine=Halfway())
+
+    def test_an_unknown_engine_name_refuses_to_start(self, tmp_path):
+        config = Config(artifact_dir=tmp_path, bind="127.0.0.1", port=0,
+                        engine="not-an-engine")
+        with pytest.raises(UnknownEngine):
+            build_server(config)

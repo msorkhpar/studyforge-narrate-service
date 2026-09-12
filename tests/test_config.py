@@ -86,3 +86,63 @@ def test_a_refusal_names_the_variable_and_never_its_value(name):
     assert name in message
     assert poison not in message
     assert "1234567890" not in message
+
+
+class TestTheEngineAndItsProfile:
+    """⛔ Both are settings, so both are validated where settings are."""
+
+    def test_the_defaults_are_kokoro_and_an_undeclared_profile(self):
+        config = from_environment({})
+        assert config.engine == "kokoro"
+        assert config.engine_profile == "unknown"
+
+    def test_the_default_profile_is_not_a_hardware_claim(self):
+        """⭐ The service cannot see its engine's hardware; it is over HTTP.
+
+        ⚠️ `cpu` is the default DEPLOYMENT (compose.yaml) and that is a
+        different statement from the default LABEL. A service run by hand
+        against an arbitrary engine must not report `cpu` as though it had
+        checked.
+        """
+        assert from_environment({}).engine_profile == "unknown"
+        assert from_environment({}).engine_profile not in ("cpu", "gpu")
+
+    def test_both_can_be_set_by_the_deployment(self):
+        config = from_environment({
+            "NARRATE_ENGINE": "kokoro",
+            "NARRATE_ENGINE_PROFILE": "gpu",
+        })
+        assert config.engine == "kokoro"
+        assert config.engine_profile == "gpu"
+
+    @pytest.mark.parametrize("profile", ["cpu", "gpu", "unknown"])
+    def test_every_member_of_the_closed_set_is_accepted(self, profile):
+        assert from_environment(
+            {"NARRATE_ENGINE_PROFILE": profile}
+        ).engine_profile == profile
+
+    def test_an_unknown_engine_is_refused_naming_what_is_permitted(self):
+        with pytest.raises(ConfigError) as raised:
+            from_environment({"NARRATE_ENGINE": "something-else"})
+        assert "NARRATE_ENGINE" in str(raised.value)
+        assert "kokoro" in str(raised.value)
+
+    def test_an_unknown_profile_is_refused_naming_what_is_permitted(self):
+        with pytest.raises(ConfigError) as raised:
+            from_environment({"NARRATE_ENGINE_PROFILE": "tpu"})
+        assert "cpu" in str(raised.value)
+        assert "gpu" in str(raised.value)
+
+    @pytest.mark.parametrize("variable", ["NARRATE_ENGINE", "NARRATE_ENGINE_PROFILE"])
+    def test_neither_refusal_echoes_the_value(self, variable):
+        """⛔ An environment variable is where an identifier turns up (R7)."""
+        with pytest.raises(ConfigError) as raised:
+            from_environment({variable: "jane-doe-at-example-com"})
+        assert "jane-doe-at-example-com" not in str(raised.value)
+
+    def test_a_capitalised_profile_is_refused_rather_than_normalised(self):
+        """⭐ *Enumerate the legal.* A closed set that quietly accepts a
+        variant is a closed set a deployment can disagree with the
+        declaration about."""
+        with pytest.raises(ConfigError):
+            from_environment({"NARRATE_ENGINE_PROFILE": "CPU"})

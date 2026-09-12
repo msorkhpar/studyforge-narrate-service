@@ -1,0 +1,162 @@
+{
+  "consuming_api": 1,
+  "provides": 1,
+  "component": "narrate-service",
+  "not_yet_declared": [
+    "voices"
+  ],
+  "service": {
+    "image": "narrate-service:local",
+    "built_from": "Dockerfile",
+    "ports": [
+      {
+        "container": 8870,
+        "host_bind": "127.0.0.1",
+        "protocol": "tcp",
+        "purpose": "the HTTP API",
+        "publish_on_all_interfaces": false
+      }
+    ],
+    "healthcheck": {
+      "path": "/healthz",
+      "port": 8870,
+      "expect_status": 200,
+      "start_period_seconds": 10,
+      "interval_seconds": 60,
+      "timeout_seconds": 10,
+      "retries": 3
+    },
+    "mounts": [
+      {
+        "container_path": "/var/lib/narrate/artifacts",
+        "kind": "volume",
+        "read_only": false,
+        "required": true,
+        "purpose": "the artifact store; it is not garbage-collected"
+      }
+    ],
+    "runs_as": {
+      "uid": 10001,
+      "user": "narrate"
+    },
+    "docker_socket": false,
+    "environment": [
+      {
+        "name": "NARRATE_ENGINE",
+        "default": "kokoro",
+        "required": false,
+        "one_of": ["kokoro"]
+      },
+      {
+        "name": "NARRATE_ENGINE_URL",
+        "default": "http://127.0.0.1:8880/v1",
+        "required": true,
+        "note": "the engine's address inside the deployment's own network"
+      },
+      {
+        "name": "NARRATE_ENGINE_PROFILE",
+        "default": "unknown",
+        "required": false,
+        "one_of": ["cpu", "gpu", "unknown"],
+        "note": "declared by the deployment, never detected by the service"
+      },
+      {
+        "name": "NARRATE_BIND",
+        "default": "127.0.0.1",
+        "required": false,
+        "note": "0.0.0.0 inside the container only; the host binding is the ports entry"
+      },
+      {
+        "name": "NARRATE_PORT",
+        "default": "8870",
+        "required": false
+      },
+      {
+        "name": "NARRATE_ARTIFACT_DIR",
+        "default": "artifacts",
+        "required": false,
+        "note": "set to the mount's container_path in the image"
+      },
+      {
+        "name": "NARRATE_VOICE",
+        "default": "am_liam",
+        "required": false
+      },
+      {
+        "name": "NARRATE_CHUNK_CHARS",
+        "default": "1800",
+        "required": false
+      },
+      {
+        "name": "NARRATE_TIMEOUT_SECONDS",
+        "default": "600",
+        "required": false,
+        "note": "per chunk; sized for the cpu profile, which is the slow one"
+      }
+    ]
+  },
+  "profiles": {
+    "default": "cpu",
+    "cpu": {
+      "opt_in": null,
+      "compose_files": ["compose.yaml"],
+      "engine_image": "ghcr.io/remsky/kokoro-fastapi-cpu:v0.8.2@sha256:8545e2a4ae8d040749a369a848236fcf768aabc3b5b7a89451afa6507101c59a",
+      "requires": {
+        "gpu": false,
+        "vendor_runtime": null,
+        "host_driver": null,
+        "devices": []
+      },
+      "engine_published": false
+    },
+    "gpu": {
+      "opt_in": "-f compose.yaml -f compose.gpu.yaml",
+      "compose_files": ["compose.yaml", "compose.gpu.yaml"],
+      "engine_image": "ghcr.io/remsky/kokoro-fastapi-gpu:v0.8.2-cu128-amd64@sha256:a95e53e3ed3da1c73ca7a36e4608c451f19117205d28252bad1f4c07062ec387",
+      "requires": {
+        "gpu": true,
+        "vendor_runtime": "nvidia-container-toolkit",
+        "host_driver": "nvidia",
+        "devices": [
+          {
+            "driver": "nvidia",
+            "count": "all",
+            "capabilities": ["gpu"]
+          }
+        ]
+      },
+      "engine_published": false
+    }
+  },
+  "api": {
+    "base_path": "/v1",
+    "routes": [
+      {
+        "method": "GET",
+        "path": "/healthz",
+        "response": "application/json"
+      },
+      {
+        "method": "POST",
+        "path": "/v1/speech",
+        "request": "application/json",
+        "response": "audio/mpeg"
+      },
+      {
+        "method": "GET",
+        "path": "/v1/artifacts/{id}",
+        "response": "audio/mpeg"
+      }
+    ],
+    "formats": ["mp3"],
+    "engine_reported_on": ["/healthz", "POST /v1/speech"],
+    "engine_headers": [
+      "Narrate-Engine",
+      "Narrate-Engine-Model"
+    ],
+    "caller_obligations": [
+      "gate personal data out of the text before the request; this service never inspects it",
+      "place artifacts yourself; this service never writes into a caller's tree"
+    ]
+  }
+}

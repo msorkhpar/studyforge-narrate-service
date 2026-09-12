@@ -22,6 +22,8 @@ import json
 import urllib.error
 import urllib.request
 
+from ..config import DEFAULT_ENGINE_PROFILE as DEFAULT_PROFILE
+from .base import EngineIdentity
 from .errors import EngineFailed, EngineUnavailable
 
 #: The engine's model name in the OpenAI request shape. Kokoro serves one.
@@ -59,10 +61,12 @@ class KokoroEngine:
 
     name = ENGINE_NAME
 
-    def __init__(self, base_url, timeout, transport=None, probe=None,
+    def __init__(self, base_url, timeout, profile=DEFAULT_PROFILE,
+                 transport=None, probe=None,
                  probe_timeout=PROBE_TIMEOUT_SECONDS):
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._profile = profile
         self._probe_timeout = probe_timeout
         self._transport = transport if transport is not None else _post
         self._probe = probe if probe is not None else _get
@@ -70,6 +74,18 @@ class KokoroEngine:
     @property
     def base_url(self):
         return self._base_url
+
+    def identity(self):
+        """What produced an artifact. ⛔ `profile` is declared, not detected.
+
+        ⚠️ **The same adapter serves the CPU and the GPU profile**: Kokoro's
+        two images speak one request shape, so the profile is carried here as
+        the deployment's own statement and changes nothing about the call.
+        That it changes nothing is the point -- see `registry.py`.
+        """
+        return EngineIdentity(
+            engine=self.name, profile=self._profile, model=MODEL
+        )
 
     def synthesize_chunk(self, text, voice, fmt):
         """Audio bytes for one chunk. Raises `EngineError` on every failure.

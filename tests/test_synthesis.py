@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from narrate.artifacts import ArtifactStore
@@ -138,3 +140,62 @@ def test_two_identical_requests_are_two_artifacts(tmp_path):
                         1800, FORMAT_MEDIA_TYPES)
     assert first.artifact_id != second.artifact_id
     assert len(list(tmp_path.iterdir())) == 2
+
+
+class TestTheArtifactRecordsWhatMadeIt:
+    def test_the_identity_is_read_once_before_the_first_chunk(self):
+        """⭐ So every chunk of one artifact is attributed to one engine.
+
+        A `identity()` read per chunk, or after the loop, would let a long
+        synthesis be stamped with an engine that only arrived halfway through.
+        """
+        engine = _CountingIdentity()
+        result = synthesise(
+            "A sentence. " * 400, "am_liam", "mp3",
+            engine=engine, store=_NullStore(), chunk_chars=100,
+            media_types=FORMAT_MEDIA_TYPES,
+        )
+        assert result.chunks > 1
+        assert engine.identity_calls == 1
+        assert engine.calls_before_first_identity == 0
+
+    def test_the_summary_carries_the_three_fields_and_never_the_text(self):
+        engine = FakeEngine(profile="cpu", model="fake-1")
+        result = synthesise(
+            "A secret sentence.", "am_liam", "mp3",
+            engine=engine, store=_NullStore(), chunk_chars=1800,
+            media_types=FORMAT_MEDIA_TYPES,
+        )
+        summary = result.summary()
+        assert summary["engine"] == "fake"
+        assert summary["engine_profile"] == "cpu"
+        assert summary["engine_model"] == "fake-1"
+        assert "secret" not in json.dumps(summary)
+
+    def test_the_label_is_what_a_header_carries(self):
+        result = synthesise(
+            "Prose.", "am_liam", "mp3",
+            engine=FakeEngine(profile="gpu"), store=_NullStore(),
+            chunk_chars=1800, media_types=FORMAT_MEDIA_TYPES,
+        )
+        assert result.identity.label == "fake/gpu"
+
+
+class _NullStore:
+    def put(self, artifact_id, audio):
+        return None
+
+
+class _CountingIdentity(FakeEngine):
+    """Records the order of `identity()` against `synthesize_chunk()`."""
+
+    def __init__(self):
+        super().__init__()
+        self.identity_calls = 0
+        self.calls_before_first_identity = None
+
+    def identity(self):
+        if self.identity_calls == 0:
+            self.calls_before_first_identity = len(self.calls)
+        self.identity_calls += 1
+        return super().identity()
