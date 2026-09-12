@@ -159,7 +159,11 @@ applying nothing, and the ordinary suite asserts that every committed anchor
 still resolves — so a refactor that moves one turns the harness red instead of
 quietly disarming a control. That the real engine accepts the request shape is
 established by a recorded measurement, not by a test that skips when the
-deployment is down.
+deployment is down. ⭐ **That measurement is
+[`docs/engine-measurement.md`](docs/engine-measurement.md)** — the CPU profile
+at its pinned digest, the README's own request, and what `narrate.mpeg` read
+off the bytes that came back. ⚠️ **It also refuted something**, which is what a
+first live run is for.
 
 ## Layout
 

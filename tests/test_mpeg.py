@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 
 from narrate import mpeg
-from tests.support import FRAME_SECONDS, id3_tag, mpeg_bytes, one_frame
+from tests.support import (
+    FRAME2_BYTES, FRAME2_SECONDS, FRAME_BYTES, FRAME_SECONDS,
+    MEASURED_FRAME2_HEADER, id3_tag, mpeg2_bytes, mpeg_bytes, one_frame,
+    one_frame_mpeg2,
+)
 
 
 def test_one_frame_is_described():
@@ -81,3 +85,63 @@ def test_a_layer_two_frame_is_refused():
 def test_trailing_junk_after_real_frames_is_tolerated():
     shape = mpeg.describe(mpeg_bytes(5) + b"TAGtrailing-metadata")
     assert shape["frames"] == 5
+
+
+# -- the arm the deployment actually takes ---------------------------------
+#
+# ⛔ **Everything above builds MPEG-1 frames; the pinned engine emits MPEG-2.**
+# The live reading in `docs/engine-measurement.md` found that `_read_header`'s
+# MPEG-2 arm -- a different bitrate table and half the samples per frame -- had
+# never been exercised by anything, in a suite of five hundred tests, while
+# being the only arm production ever reaches. These close that.
+
+
+def test_the_builder_reproduces_the_MEASURED_engine_header():
+    """⭐ The fixture is derived, and it agrees with the real engine's bytes.
+
+    If this fails, either the derivation is wrong or the engine changed --
+    and either way the measurement document is the thing to re-take.
+    """
+    assert one_frame_mpeg2()[:4] == MEASURED_FRAME2_HEADER
+
+
+def test_an_MPEG_2_frame_is_described_at_its_own_sample_rate():
+    shape = mpeg.describe(mpeg2_bytes(1))
+    assert shape["frames"] == 1
+    assert shape["sample_rate"] == 24000
+    assert shape["seconds"] == pytest.approx(FRAME2_SECONDS, abs=1e-3)
+
+
+def test_an_MPEG_2_frame_is_384_bytes_not_the_MPEG_1_size():
+    """⛔ The size arithmetic is the half that a wrong `samples` gets wrong.
+
+    576 samples, not 1152: a parser that used the MPEG-1 constant here would
+    walk off the end of every real frame and read the stream as junk.
+    """
+    assert FRAME2_BYTES == 384
+    assert FRAME2_BYTES != FRAME_BYTES
+
+
+def test_a_real_length_MPEG_2_stream_sums_to_the_measured_duration():
+    """The single-request reading: 123 frames, 2.952 s, and 47276 bytes in all.
+
+    ⭐ Every byte of the real response is accounted for by this arithmetic --
+    123 x 384 plus a 44-byte ID3 tag -- which is why the reading is quotable
+    rather than merely plausible.
+    """
+    stream = id3_tag(payload_size=34) + mpeg2_bytes(123)
+    assert len(stream) == 47276
+    shape = mpeg.describe(stream)
+    assert shape["frames"] == 123
+    assert shape["sample_rate"] == 24000
+    assert shape["seconds"] == pytest.approx(2.952, abs=1e-3)
+
+
+def test_MPEG_1_and_MPEG_2_frames_in_one_stream_are_REFUSED():
+    """⛔ A concatenation of two engines' output is not one artifact.
+
+    The sample rates disagree, so `describe` must refuse rather than report a
+    duration for a file that no decoder will play straight through.
+    """
+    with pytest.raises(mpeg.NotMpegAudio):
+        mpeg.describe(mpeg2_bytes(3) + mpeg_bytes(3))

@@ -8,8 +8,21 @@ duration -- which is what makes the duration assertions meaningful rather than
 self-confirming.
 
 ⚠️ **Known-incomplete, deliberately:** only MPEG-1 Layer III at 44.1 kHz is
-built here, because that is what the engine emits. A second sample rate is one
-more constant when something needs it.
+built here. A second sample rate is one more constant when something needs it.
+
+⛔ **THIS IS NOT THE SHAPE THE ENGINE EMITS, and the line that used to say it
+was was FALSE.** The pinned CPU engine returns **MPEG-2 Layer III at 24 kHz,
+mono** -- measured, and recorded in `docs/engine-measurement.md`. The
+consequence is worth knowing before trusting a green run: `narrate.mpeg`'s
+header parser has two arms, and **every frame built here takes the MPEG-1 arm
+while every frame the deployment actually sees takes the MPEG-2 one.** That arm
+is correct -- the measurement closes its duration arithmetic at two lengths --
+but the suite is not what establishes it.
+
+⭐ **The fix for that is a second frame builder, never a change to the constants
+below.** Building from the specification rather than from today's engine is the
+property this file has; matching the fixture to the engine would trade a parser
+test for an engine test and lose it.
 """
 
 from __future__ import annotations
@@ -44,6 +57,42 @@ def one_frame(filler=b"\x00"):
 def mpeg_bytes(frames=1):
     """`frames` well-formed frames, concatenated."""
     return one_frame() * frames
+
+
+#: ⭐ **THE SHAPE THE PINNED ENGINE ACTUALLY EMITS**, added because the live
+#: measurement found that nothing here built it. MPEG-2 Layer III, 128 kbit/s,
+#: 24 kHz, mono, no padding. ⚠️ Still built by arithmetic from the
+#: specification, not sampled: the header below is *derived* and the test
+#: asserts it equals what was measured, which is a stronger statement than
+#: pasting the measured bytes in would be.
+FRAME2_SAMPLE_RATE = 24000
+FRAME2_BITRATE = 128_000
+FRAME2_SAMPLES = 576          # ⛔ MPEG-2 halves it; this is the whole difference
+FRAME2_BYTES = (FRAME2_SAMPLES // 8) * FRAME2_BITRATE // FRAME2_SAMPLE_RATE
+FRAME2_SECONDS = FRAME2_SAMPLES / FRAME2_SAMPLE_RATE
+
+#: The measured first-frame header, from `docs/engine-measurement.md`. The
+#: builder below must reproduce it bit for bit.
+MEASURED_FRAME2_HEADER = bytes((0xFF, 0xF3, 0xC4, 0xC4))
+
+
+def one_frame_mpeg2(filler=b"\x00"):
+    """One MPEG-2 Layer III frame, header built field by field.
+
+    ⛔ Written out as fields rather than as a constant so the header is
+    checkable against the specification: sync, version 2, layer III, no CRC;
+    then bitrate index 12, sample-rate index 1, no padding; then mono.
+    """
+    b1 = 0xE0 | (0b10 << 3) | (0b01 << 1) | 0b1        # sync tail, MPEG-2, L3, no CRC
+    b2 = (12 << 4) | (0b01 << 2) | (0 << 1)            # 128 kbit/s, 24 kHz, no padding
+    b3 = (0b11 << 6) | (1 << 2)                        # mono, "original" bit set
+    header = bytes((0xFF, b1, b2, b3))
+    return header + filler * (FRAME2_BYTES - len(header))
+
+
+def mpeg2_bytes(frames=1):
+    """`frames` well-formed MPEG-2 Layer III frames, concatenated."""
+    return one_frame_mpeg2() * frames
 
 
 def id3_tag(payload_size=16):
