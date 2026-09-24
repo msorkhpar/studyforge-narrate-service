@@ -19,7 +19,7 @@ so both profiles run *this same adapter*: what differs between them is the
 engine image, the device reservation and the declared profile label, all of it
 in `compose.yaml` and `compose.gpu.yaml`. ⛔ **If a profile needed its own class
 here, switching profiles would be a code change** -- which is precisely what
-`NS-03`'s *"switching profiles is a deployment choice, not a code change"*
+the rule *"switching profiles is a deployment choice, not a code change"*
 forbids. The seam this package exists for is the one a **different engine**
 crosses, and that one is `registry.py`.
 

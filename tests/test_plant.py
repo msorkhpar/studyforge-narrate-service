@@ -1,6 +1,6 @@
 """⛔ The negative-control harness, and the anchors it is built on.
 
-⭐ **This module is the answer to `CTO-69/11`.** A handoff reported that one
+⭐ **This module exists because of a near-miss.** A handoff reported that one
 plant of twelve failed to apply and produced a green suite, that the run was
 discarded, and that the harness now refuses an anchor which does not match
 exactly once. ⛔ **The reviewer could confirm the honesty and not the repair,
@@ -156,7 +156,7 @@ class TestTheCommittedCatalogue:
 
     @pytest.mark.parametrize("control", CONTROLS, ids=lambda c: c.id)
     def test_every_anchor_resolves_EXACTLY_ONCE_in_the_tree(self, control):
-        """⛔ The repair `CTO-69/11` could not confirm, made confirmable.
+        """⛔ The repair a reviewer could not confirm, made confirmable.
 
         ⚠️ A control whose anchor has drifted is a control that will not arm,
         and the harness would refuse it at run time -- but only if somebody

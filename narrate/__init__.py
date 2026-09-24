@@ -35,21 +35,21 @@ __version__ = "0.1.0"
 #: of the `provides` key in `consuming.json` -- a test asserts the two agree.
 #: ⚠️ It is neither `__version__` nor the component's commit: a build changes
 #: without the promise changing, and the promise can change without a new build
-#: (spec R9, Ruling 5).
+#: (spec R9).
 #:
-#: ⭐ `3` because `NS-04` and `NS-06` changed what a caller may rely on again,
+#: ⭐ `3` because the voice catalogue and the agent adapter changed what a caller may rely on again,
 #: in all three of the things `provides` versions:
 #:
 #: * the ROUTES gained `GET /v1/voices`;
 #: * the CACHE's addressing scheme moved `narrate-address-2` ->
 #:   `narrate-address-3`, because the engine MODEL joined the hashed tuple
-#:   (`CTO-69/19`) -- ⛔ **every address a caller recorded under 2 is a miss
+#:   -- ⛔ **every address a caller recorded under 2 is a miss
 #:   under 3**, which is the sharpest thing this number has ever had to carry;
 #:   and
 #: * a request naming an unknown voice is now a `400` rather than a `502` or a
 #:   per-segment `failed`, which is a change to what a caller must handle.
 #:
-#: ⚠️ **`2` MERGED**, unlike the churn inside it that `NS-02` argued about: it
+#: ⚠️ **`2` MERGED**, unlike the churn inside the batch-job work that led to it: it
 #: shipped to this repository's `main`, so a consumer can obtain it and `3` is
 #: the next number rather than a re-use.
 #:

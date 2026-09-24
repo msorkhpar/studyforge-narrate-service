@@ -2,6 +2,26 @@
 
 Turn text into speech, over HTTP, in a container. Standard library only.
 
+## Reading list
+
+Read in this order; nothing outside this repository is needed.
+
+1. **This README**: what the service is, how to build its image locally by tag
+   (*Build the image*), how to run it (*Run it*), and how to run its own suite
+   (*The suite*).
+2. **[`consuming.json`](consuming.json)**: the machine-readable contract. It
+   promises the image name and how it is built, the port and its loopback
+   binding, the mount, the uid, every environment variable with its default,
+   the healthcheck, both profiles and what each requires, the addressing scheme
+   (enough to compute an artifact's address before submitting anything), every
+   voice this deployment can speak, and the optional agent adapter's condition
+   for sharing a store. `provides` versions that promise; `not_yet_declared`
+   lists anything still owed, and is empty.
+3. **[`docs/api.md`](docs/api.md)**: the HTTP API, route by route.
+4. **[`docs/agent.md`](docs/agent.md)**: the optional agent adapter.
+5. **[`docs/engine-measurement.md`](docs/engine-measurement.md)**: the recorded
+   live run against the real engine.
+
 **[`docs/api.md`](docs/api.md) is the API.** Read it before calling this — in
 particular the two rules at the top, which are the ones a caller can get wrong
 in a way that cannot be undone.
@@ -63,6 +83,23 @@ And one the service adds:
 
 Both are argued in [`docs/api.md`](docs/api.md).
 
+## Build the image
+
+The service's image is built from this directory's `Dockerfile`, on a base
+pinned by digest, and installs nothing: the service is standard library only.
+The contract names the tag a consumer runs, `service.image` in
+[`consuming.json`](consuming.json) (`narrate-service:local`), and
+`compose.yaml` builds that tag:
+
+```bash
+docker compose build narrate                    # tags narrate-service:local
+docker build -t narrate-service:<your-tag> .   # or any tag of your own
+```
+
+The engine is not built here. It is a separate image, pinned by tag and digest
+in `compose.yaml` (CPU) and `compose.gpu.yaml` (GPU), and pulled once by that
+digest; after that `--pull never` keeps every later run offline.
+
 ## Run it
 
 ```bash
@@ -121,7 +158,7 @@ since `provides: 3`, **every voice this deployment can speak** and the optional
 agent adapter's condition for sharing a store.
 
 ⭐ **`not_yet_declared` is now EMPTY, and the key is kept rather than deleted.**
-It named `voices` from the day the file was created until `NS-04` landed them;
+It named `voices` from the day the file was created until the voice catalogue landed;
 an empty list still says *nothing is owed*, which a missing key could not.
 Reading a Dockerfile is the first step toward forking it.
 

@@ -75,7 +75,7 @@ def test_healthz_reports_an_unreachable_engine_without_failing(service):
 
 
 class TestTheVoiceCatalogueIsDiscoverableThroughTheAPI:
-    """⭐ `NS-04`'s first Acceptance, at the surface a consumer actually uses."""
+    """⭐ The voice catalogue, at the surface a consumer actually uses."""
 
     def test_the_route_lists_every_voice_with_its_four_fields(self, service):
         request = service(FakeEngine())
@@ -112,7 +112,7 @@ class TestTheVoiceCatalogueIsDiscoverableThroughTheAPI:
 
 
 class TestAnUnknownVoiceIsRefusedRatherThanSilentlyDefaulted:
-    """⛔ `NS-04`'s fourth Acceptance, on both synthesis routes.
+    """⛔ An unknown voice, on both synthesis routes.
 
     ⚠️ **It used to reach the engine**: a `502` on `/v1/speech`, and through
     `/v1/jobs` one `failed` entry per segment with `reason: engine_failed` --
@@ -347,7 +347,7 @@ def test_an_unknown_route_is_four_hundred_and_four(service, method, path):
 
 
 def test_the_batch_route_is_at_one_path_and_the_near_misses_are_not_it(service):
-    """⭐ The inverse of `NS-01`'s `test_there_is_no_batch_route`.
+    """⭐ The inverse of the first release's `test_there_is_no_batch_route`.
 
     That test asserted the absence of `/v1/jobs` so that this task's change
     would be visible rather than silent. It is inverted here rather than
@@ -384,7 +384,7 @@ def test_a_response_never_carries_the_text_that_was_sent(service):
 
 
 class TestTheEngineIsReported:
-    """⛔ `NS-03`: *"the engine in use is reported by the service so a caller
+    """⛔ *"The engine in use is reported by the service so a caller
     can record which one produced an artifact."*
 
     ⭐ **Two places, and both are needed.** `/healthz` answers *what will this

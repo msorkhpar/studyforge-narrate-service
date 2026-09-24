@@ -42,7 +42,7 @@ class TestTheAddressIsAFunctionOfTheRequest:
     @pytest.mark.parametrize("changed", [
         {"text": "Other prose."},
         {"voice": "af_bella"},
-        # ⛔ NS-04: the model decides how a voice sounds, so it is in the
+        # ⛔ The model decides how a voice sounds, so it is in the
         # address. The engine FAMILY and the hardware PROFILE are not.
         {"engine_model": "some-other-model"},
     ])
@@ -52,7 +52,7 @@ class TestTheAddressIsAFunctionOfTheRequest:
     def test_the_encoding_is_pinned_to_a_GOLDEN_digest(self):
         """⛔ A concrete value, because *it is deterministic* is unfalsifiable.
 
-        ⚠️ **This replaces a test that was born vacuous** (`CTO-69/10`): it
+        ⚠️ **This replaces a test that was born vacuous**: it
         asserted that a non-empty string was truthy, under a docstring making a
         real claim about the address. ⭐ A golden digest fails if the scheme
         name, the field ORDER, the length prefixing or the text encoding
@@ -78,7 +78,7 @@ class TestTheAddressIsAFunctionOfTheRequest:
         length prefixing REMOVED, which the committed control `p09` caught by
         firing on the wrong tests.
 
-        ⛔ **NS-04 inserted `engine_model` between `chunk_chars` and `text` and
+        ⛔ **Adding the model inserted `engine_model` between `chunk_chars` and `text` and
         separated the SECOND pair the same way**, which is precisely what the
         warning above predicted. ⭐ **The pair now collides on the newly
         adjacent fields, `engine_model` and `text`** -- so the assertion tracks

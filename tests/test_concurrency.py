@@ -95,7 +95,7 @@ def test_a_writer_never_publishes_ANOTHER_writers_bytes(tmp_path):
 
     ⚠️ **The interleaving is the whole test and an earlier version of it got
     this wrong** -- pausing only one writer let the other commit first, which
-    reproduces `CTO-69/8`'s exception and NOT the corruption. The order that
+    reproduces the shared-temporary exception and NOT the corruption. The order that
     corrupts is: A stages, B stages **over A's staged bytes**, A renames, B
     renames. Both writers are therefore held at their rename and released by
     this test in that order.
@@ -172,7 +172,7 @@ def test_a_writer_never_publishes_ANOTHER_writers_bytes(tmp_path):
 
 
 def test_neither_writer_fails_because_the_other_tidied_up(tmp_path):
-    """⛔ `CTO-69/8`: the unconditional `finally` unlink, with a shared name.
+    """⛔ The unconditional `finally` unlink, with a shared name.
 
     The writer whose rename already consumed its own temporary deletes the
     temporary another writer is still using, and that writer's rename raises
@@ -252,7 +252,7 @@ def test_the_temporary_is_still_a_sibling_and_still_cleaned_up(tmp_path, payload
 
 
 # ---------------------------------------------------------------------------
-# ⛔ The PUBLISH LOCK, which `CTO-69/14` correctly charged as proved by nothing.
+# ⛔ The PUBLISH LOCK, which a review correctly charged as proved by nothing.
 #
 # ⚠️ **The unique temporary and the lock are two different properties and the
 # tests above only reach the first.** A reviewer nulled the lock on a clean
@@ -263,7 +263,7 @@ def test_the_temporary_is_still_a_sibling_and_still_cleaned_up(tmp_path, payload
 
 
 def test_the_audio_and_its_record_are_published_as_ONE_PAIR(tmp_path):
-    """⛔ `CTO-69/14`: what the write-side lock buys, and nothing else did.
+    """⛔ What the write-side lock buys, and nothing else did.
 
     Unique temporaries guarantee each published FILE is one complete write.
     They say nothing about the two files belonging to the same writer. Ordered
@@ -323,7 +323,7 @@ def test_the_audio_and_its_record_are_published_as_ONE_PAIR(tmp_path):
 
 
 def test_a_reader_never_pairs_one_writers_record_with_anothers_audio(tmp_path):
-    """⛔ `CTO-69/15`: the write-side lock alone leaves the READER crossing.
+    """⛔ The write-side lock alone leaves the READER crossing.
 
     `lookup` then `read` is two unlocked reads. A writer landing between them
     hands back the previous record beside the new audio -- **one process, not

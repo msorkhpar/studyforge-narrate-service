@@ -23,7 +23,7 @@ result.** Both run the same adapter against the same request shape; what differs
 between them is the engine image, the device reservation and the declared
 profile label -- all of it deployment. ⛔ **If a profile needed its own entry in
 this table, switching profiles would be a code change, which is exactly what
-`NS-03` exists to prevent.**
+the two profiles exist to prevent.**
 """
 
 from __future__ import annotations

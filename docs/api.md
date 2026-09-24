@@ -9,7 +9,7 @@
      equivalent for a document. Every source and test module in this
      repository is inside its limit.
 
-     ⛔ NS-04 and NS-06 grew it again, and the growth was BOUNDED rather than
+     ⛔ The voice catalogue and the agent adapter grew it again, and the growth was BOUNDED rather than
      accepted: the voice catalogue is one route and belongs beside the four it
      is used with, so it is here; the agent adapter is NOT HTTP and speaks a
      different protocol to a different caller, so it is docs/agent.md and not

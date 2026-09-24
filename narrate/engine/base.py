@@ -6,7 +6,7 @@ else about how audio is made**: `synthesize_chunk(text, voice, fmt)`,
 engine is a new module in this package that provides those four; it is never a
 change to the API, the chunker, the store or the server.
 
-⛔ **`voices()` IS THE FOURTH AND IT WAS ADDED RATHER THAN INHERITED** (NS-04).
+⛔ **`voices()` IS THE FOURTH AND IT WAS ADDED RATHER THAN INHERITED**, with the voice catalogue.
 ⚠️ **The contract widened, so the POPULATION this module's gate refuses widened
 with it**: an object that satisfied the three-member contract is refused today.
 That is deliberate and it is the cheap direction -- *which voices exist* is a

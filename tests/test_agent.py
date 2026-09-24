@@ -179,7 +179,7 @@ class TestWhatTheAdapterRefusesAndHow:
                     engine=FakeEngine())
 
     def test_every_tool_description_states_the_gate_obligation(self):
-        """⛔ `E13`: the personal-data gate is client-side, and the caller here
+        """⛔ The personal-data gate is client-side, and the caller here
         is an agent. ⚠️ A rule that lives only in a docstring is a rule the
         caller never reads -- these are the words the model actually sees."""
         speaking = [t for t in TOOLS if t["name"] != "voices"]
@@ -189,7 +189,7 @@ class TestWhatTheAdapterRefusesAndHow:
 
 
 class TestTheProtocolStreamCarriesProtocolBytesAndNothingElse:
-    """⛔ `E13`'s carried lesson, and an ACCEPTANCE CLAUSE rather than advice."""
+    """⛔ A lesson carried from earlier work, and an ACCEPTANCE CLAUSE rather than advice."""
 
     def test_serve_stdio_writes_to_the_handle_it_was_given(self, adapter):
         sink = io.StringIO()
@@ -231,7 +231,7 @@ class TestTheProtocolStreamCarriesProtocolBytesAndNothingElse:
             class NoisyEngine(FakeEngine):
                 def synthesize_chunk(self, text, voice, fmt):
                     # ⛔ Three deliberate ways of writing to stdout, inside
-                    # the synthesis path, exactly as E13 describes.
+                    # the synthesis path.
                     print("a careless print inside the synthesis path")
                     warnings.warn("a warning nobody suppressed")
                     traceback.print_stack()

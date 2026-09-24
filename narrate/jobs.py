@@ -128,7 +128,7 @@ def parse_job(request, default_voice, catalogue):
     operator pastes somewhere, which is the disclosure the gate exists to
     prevent -- by a slower route.
 
-    ⛔ **`catalogue` IS REQUIRED AND HAS NO DEFAULT, DELIBERATELY** (NS-04). An
+    ⛔ **`catalogue` IS REQUIRED AND HAS NO DEFAULT, DELIBERATELY**. An
     optional validator is a validator that is off wherever somebody forgot it,
     and this one decides whether a job of three thousand segments is refused
     in a millisecond or attempted three thousand times. ⭐ **Before it existed
@@ -269,7 +269,7 @@ def _manifest(job, entries, provides, chunk_chars, engine_model):
     return {
         # ⛔ The manifest is a WIRE SHAPE and takes no contract row of its own:
         # it is versioned by the service's promise, which is `provides` in
-        # `consuming.json` (Ruling 330(b)). This echoes that number so a caller
+        # `consuming.json`. This echoes that number so a caller
         # holding only a response knows which promise produced it.
         "provides": provides,
         "voice": job.voice,

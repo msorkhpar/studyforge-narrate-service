@@ -7,7 +7,7 @@
     GET  /v1/artifacts/<id>       fetch a finished artifact again
 
 ⛔ **AN UNKNOWN VOICE IS A `400` ON BOTH SYNTHESIS ROUTES, AND FOR A JOB IT IS
-THE WHOLE JOB** (NS-04). A voice applies to every segment, so it is a property
+THE WHOLE JOB**. A voice applies to every segment, so it is a property
 of the request rather than of any one segment: refusing it before anything runs
 turns three thousand engine round trips into one refusal that names what is
 permitted. ⭐ **`GET /v1/voices` is the answer to that refusal**, and it needs no

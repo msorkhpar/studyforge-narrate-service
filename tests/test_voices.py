@@ -1,6 +1,6 @@
 """`narrate.voices`, the Kokoro catalogue, and the two-direction claim.
 
-⛔ **The claim this module exists for is the one `NS-04`'s row states and the
+⛔ **The claim this module exists for is the one the voice catalogue promises and the
 one that is usually only half-tested**: changing a corpus's voice invalidates
 that corpus's cached audio **and does not invalidate another corpus's**.
 ⚠️ **The negative half is the half that matters** -- a scheme that invalidated
@@ -196,7 +196,7 @@ CORPUS_B = {f"b-s{n:03d}": f"Corpus B, speech unit {n}." for n in range(1, 5)}
 
 
 class TestChangingAVoiceInvalidatesThatCorpusAndNoOther:
-    """⛔ `NS-04`'s Acceptance, and both halves are asserted on the ENGINE."""
+    """⛔ The voice catalogue's promise, and both halves are asserted on the ENGINE."""
 
     @pytest.fixture
     def both_corpora(self, tmp_path):
