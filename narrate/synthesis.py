@@ -186,7 +186,7 @@ def _from_store(artifact_id, store, media_types, keep_audio):
 
     ⛔ **One `snapshot` and not `lookup` then `read`.** Those are two unlocked
     reads, and a writer landing between them hands back the previous record
-    beside the new audio (`CTO-69/15`). The pair is taken under the stripe the
+    beside the new audio. The pair is taken under the stripe the
     writer holds.
     """
     record, audio = store.snapshot(artifact_id, with_audio=keep_audio)

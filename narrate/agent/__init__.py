@@ -11,7 +11,7 @@ which is what `tests/test_agent.py` asserts, in a subprocess.
 
 ## ⛔ THE PROTOCOL STREAM CARRIES PROTOCOL BYTES AND NOTHING ELSE
 
-⚠️ **This is the carried lesson `E13` says cost a debugging session, and it is
+⚠️ **This is a lesson that once cost a debugging session, and it is
 an acceptance clause rather than advice.** The transport is newline-delimited
 JSON-RPC 2.0 on stdout. A single stray `print`, a warning, or a traceback on
 that stream corrupts it, and the client drops the connection reporting only a
@@ -27,8 +27,8 @@ that names this property really fires.
 
 ## ⛔ IT CALLS THE SERVICE'S FUNCTIONS, NOT THE SERVICE'S HTTP API
 
-`run_job` is a plain function returning a plain dictionary and needs no HTTP
-(`NS-02`). So the adapter builds an engine and a store from the same
+`run_job` is a plain function returning a plain dictionary and needs no HTTP.
+So the adapter builds an engine and a store from the same
 environment `serve` reads and calls straight in. ⭐ **Nothing has to be running**
 -- an agent narrating one paragraph does not first deploy a web service.
 
@@ -52,7 +52,7 @@ rather than inferring it.
 
 ## ⛔ NO PERSONAL-DATA GATE LIVES HERE, AND THAT IS NOT AN OVERSIGHT
 
-`E13` rules the gate client-side and pre-request (R7, `NS-05`), and this
+The gate is ruled client-side and pre-request (spec R7), and this
 package is inside the service. ⚠️ **The caller of this adapter is an agent, so
 the AGENT is the gate's owner** -- there is no `narrate.client` between it and
 the engine. ⛔ **Every tool description below says so in the text the model

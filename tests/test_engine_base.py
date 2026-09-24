@@ -34,7 +34,7 @@ class _Almost:
 
 
 def test_the_contract_is_five_members_and_it_is_written_down():
-    """⚠️ **It was four and NS-04 made it five.** `voices()` is an engine-family
+    """⚠️ **It was four and the voice catalogue made it five.** `voices()` is an engine-family
     fact, so it belongs behind this seam; the alternative was a server that
     branched on which engine was deployed, which is what `registry.py` exists
     to prevent. ⛔ **The refused POPULATION widened with it**: an object that

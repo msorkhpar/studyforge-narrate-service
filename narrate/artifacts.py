@@ -34,7 +34,7 @@ the REQUEST**: the inputs that decide what is said and how.
 | `format` | different formats are different bytes, and the store keeps one file per address |
 | `voice` | changing a corpus's voice must invalidate that corpus's audio, and only that corpus's |
 | `chunk_chars` | ⛔ **the budget decides WHERE the text is cut, each chunk is a separate engine request, and the pieces are concatenated — so a different budget is different bytes at every join** |
-| `engine_model` | ⛔ **the model is what decides how a voice SOUNDS. Added by NS-04; see below** |
+| `engine_model` | ⛔ **the model is what decides how a voice SOUNDS. Added with the voice catalogue; see below** |
 | `text` | ⭐ **exactly as submitted. No normalisation. See below** |
 
 ⛔ **THE ENGINE FAMILY AND THE HARDWARE PROFILE ARE NOT IN THE ADDRESS; THE
@@ -43,17 +43,17 @@ the thing it was written for**: the *profile* is the hardware question, the
 *family* decides whether a voice id means anything, and the *model* is *"the
 one that changes what the audio sounds like without either of the other two
 moving"*. Keeping the profile out is what stops a move between the CPU and GPU
-builds of one model re-synthesising a whole corpus -- the property `NS-03`
-exists for, and it is untouched.
+builds of one model re-synthesising a whole corpus -- the property the CPU and
+GPU profiles exist for, and it is untouched.
 
-⛔ **THE MODEL WAS OUTSIDE THE ADDRESS AND THAT WAS A SILENT DEFECT** (`CTO-69/19`,
-`NS-02/14`, routed here). A deployment that swapped the model kept every
+⛔ **THE MODEL WAS OUTSIDE THE ADDRESS AND THAT WAS A SILENT DEFECT**, found in
+review. A deployment that swapped the model kept every
 address and served audio in a different voice: no test failed, no manifest
 changed, and the store's own claim -- *this address describes these bytes* --
 was simply false. ⚠️ **The alternative offered was to declare the exclusion and
 make a model change a deliberate store reset**; it was rejected because it puts
-a correctness property in an operator's memory, which is the failure
-`CTO-69/18` charged one round earlier. ⭐ **The cost of hashing it in is that
+a correctness property in an operator's memory -- the same failure as a version
+field that does not move when its own definition says it must. ⭐ **The cost of hashing it in is that
 retuning the model re-synthesises the store -- which is CORRECT, because the
 audio really is different.**
 
@@ -97,7 +97,7 @@ ADDRESS_SCHEME = "narrate-address-3"
 
 #: The request fields the address covers, in the order they are hashed.
 #:
-#: ⛔ **`chunk_chars` is here and its absence was a real defect** (`CTO-69/9`).
+#: ⛔ **`chunk_chars` is here and its absence was a real defect**.
 #: The budget decides where the text is cut; each chunk is a SEPARATE engine
 #: request and the pieces are concatenated, so a different budget is a
 #: different byte-stream at every join. Two deployments sharing a store served
@@ -107,7 +107,7 @@ ADDRESS_SCHEME = "narrate-address-3"
 #: incomplete set can be mistaken for one minted under this one.
 #:
 #: ⛔ **`engine_model` is here for the same reason and it was the second real
-#: gap** (`CTO-69/19`, routed to `NS-04`). The model decides how a voice sounds,
+#: gap**. The model decides how a voice sounds,
 #: so swapping it while keeping every address served different audio under an
 #: address asserting it had not changed. ⚠️ **The scheme number moved again**:
 #: `narrate-address-2` -> `narrate-address-3`. ⭐ **The engine FAMILY and the
@@ -154,8 +154,8 @@ def address_for(text, voice, fmt, chunk_chars, engine_model):
     always give the same 64-character address, on any host and in any process.
 
     ⛔ **`engine_model` is the deployment's model name, not its engine family
-    and not its hardware profile.** It is here because it changes the audio
-    (`CTO-69/19`); the other two are deliberately absent so that moving
+    and not its hardware profile.** It is here because it changes the audio;
+    the other two are deliberately absent so that moving
     between the CPU and GPU builds of one model costs nothing.
 
     ⚠️ **`chunk_chars` is included even though it changes nothing for a text
@@ -250,7 +250,7 @@ class ArtifactStore:
         """A record and its audio, read as ONE consistent pair, or `(None, None)`.
 
         ⛔ **This exists because the publish lock alone was not enough, and the
-        gap was caller-visible** (`CTO-69/15`). `put` serialises WRITERS, but a
+        gap was caller-visible**. `put` serialises WRITERS, but a
         reader doing `lookup` and then `read` takes no lock at all: a writer
         landing between those two calls leaves the reader holding the previous
         record beside the new audio -- a `seconds` and a `bytes` belonging to a
@@ -330,7 +330,7 @@ class ArtifactStore:
         actually creates** (one serving process per deployment). ⛔ **It is held
         by READERS too, via `snapshot`, and that was a correction rather than a
         design** -- serialising only writers left a single process able to pair
-        one synthesis's record with another's audio (`CTO-69/15`).
+        one synthesis's record with another's audio.
 
         ⚠️ **What remains is genuinely cross-process:** two serving processes
         sharing one store can still cross a record with its twin's audio; both
@@ -357,7 +357,7 @@ def _atomic_write(destination, data):
     """`data` at `destination`, via a UNIQUE temporary sibling and one rename.
 
     ⛔ **The temporary is unique per call, and a name derived from the
-    destination was a real defect** (`CTO-69/7`, `CTO-69/8`). Every writer of
+    destination was a real defect**. Every writer of
     one address shared one staging path, so one writer's `write_bytes`
     truncated another's staged bytes and the first rename published the
     mixture under a valid content address -- ⚠️ **precisely the truncated-file

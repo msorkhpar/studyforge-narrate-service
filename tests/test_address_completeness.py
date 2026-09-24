@@ -26,23 +26,23 @@ world.
 
 ⚠️ **The list below is HAND-ENUMERATED and derives nothing from the code**, so a
 newly added audio-changing input is invisible to it — which is the failure it
-was written to prevent, one level up (`CTO-69/19`). ⛔ **It is a checklist of
+was written to prevent, one level up. ⛔ **It is a checklist of
 the inputs NAMED IN IT, not a universal**, and the class is named
-accordingly. ⚠️ **It was a checklist of four and NS-04 made it six** by closing
+accordingly. ⚠️ **It was a checklist of four and the voice catalogue made it six** by closing
 the gap the next paragraph used to describe -- the list growing by hand, which
 is exactly the weakness it declares.
 
 ⭐ **THE GAP THIS MODULE NAMED IS CLOSED, AND ITS CASE IS NOW ONE OF THE
 ENUMERATED FOUR.** The previous version read: *"the ENGINE MODEL is an
-audio-changing input and it is NOT in the address ... routed to `NS-04`, which
-owns voices and will touch this seam"*. ⛔ **`NS-04` took the first of the two
+audio-changing input and it is NOT in the address ... routed to the voice
+catalogue work, which will touch this seam"*. ⛔ **That work took the first of the two
 remedies it offered: the model is hashed in** (`narrate.artifacts`,
 `ADDRESS_SCHEME` `narrate-address-3`), and `test_the_ENGINE_MODEL` below is
 driven from the synthesis path like every other case here.
 
 ⚠️ **The ENGINE FAMILY and the hardware PROFILE remain outside the address and
 that is still correct** -- a move between the CPU and GPU builds of one model
-must not re-synthesise a corpus (`NS-03`). ⛔ **Neither of them is an
+must not re-synthesise a corpus. ⛔ **Neither of them is an
 audio-changing input in the sense this module tests**, and
 `TestTheProducedBytesAreNotInTheAddress` is the assertion that says so.
 """
@@ -123,7 +123,7 @@ class TestEachEnumeratedInputChangesTheAddress:
                 != address_for(LONG, "am_liam", "wav", 1800, "fake-1"))
 
     def test_the_ENGINE_MODEL(self, tmp_path):
-        """⛔ The second one that was missing (`CTO-69/19`, closed by NS-04).
+        """⛔ The second one that was missing, and it is now hashed in.
 
         The model decides how a voice sounds, so two models are two different
         byte-streams for one request. ⭐ **Driven from the synthesis path**: the
@@ -151,7 +151,7 @@ class TestEachEnumeratedInputChangesTheAddress:
         )
 
     def test_the_engine_FAMILY_and_PROFILE_are_deliberately_NOT_in_it(self, tmp_path):
-        """⛔ The other direction, and it is the property NS-03 built.
+        """⛔ The other direction, and it is the property the CPU/GPU profiles need.
 
         ⚠️ **Same model, different profile and different family**: the address
         must NOT move, or a redeployment from the CPU build to the GPU build
@@ -190,7 +190,7 @@ class TestTheProducedBytesAreNotInTheAddress:
         """⛔ R10's carve-out, as the thing that makes the cache possible.
 
         ⚠️ **This is the claim a replaced test only gestured at** -- it asserted
-        that an address was a non-empty string (`CTO-69/10`). Here two engines
+        that an address was a non-empty string. Here two engines
         genuinely produce different audio for one request, and the address is
         unmoved: an address over the OUTPUT would change on every
         re-synthesis, which is a cache that never hits.

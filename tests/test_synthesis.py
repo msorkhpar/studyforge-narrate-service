@@ -128,7 +128,7 @@ def test_a_failure_on_a_later_chunk_stores_nothing(tmp_path):
 
 
 def test_two_identical_requests_are_ONE_artifact_and_one_synthesis(tmp_path):
-    """⭐ The inversion of `NS-01`'s `test_two_identical_requests_are_two_artifacts`.
+    """⭐ The inversion of the first release's `test_two_identical_requests_are_two_artifacts`.
 
     That test pinned this service's deliberate NON-idempotence so that the
     change would be visible rather than silent. Here is the change: one

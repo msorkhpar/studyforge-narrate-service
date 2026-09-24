@@ -58,7 +58,7 @@ class TestTheFileItself:
         """⛔ The pin file records which BUILD; `provides` records which PROMISE.
 
         `consuming_api` versions this file's own schema. Conflating any two of
-        the three is the defect the file exists to prevent (spec, Ruling 5).
+        the three is the defect the file exists to prevent.
         """
         assert contract["consuming_api"] == 1
         # ⛔ ONE source. `narrate.PROVIDES` is what `/healthz` and every
@@ -71,13 +71,13 @@ class TestTheFileItself:
         """⚠️ Three different questions and none substitutes for another.
 
         The pin file records which BUILD, `provides` which PROMISE, and
-        `consuming_api` this file's own SCHEMA (spec R9, Ruling 5).
+        `consuming_api` this file's own SCHEMA (spec R9).
         """
         assert str(contract["provides"]) != narrate.__version__
         assert contract["provides"] != contract["consuming_api"]
 
     def test_the_LAST_declared_gap_is_closed_and_the_marker_is_EMPTY(self, contract):
-        """⭐ `NS-04` landed the half `NS-03` named absent, and this test is the
+        """⭐ The voice catalogue landed the half that was declared absent, and this test is the
         one that was written to fail on this branch.
 
         ⚠️ **Its previous form asserted the absence**: `not_yet_declared ==
@@ -248,10 +248,10 @@ class TestTheDeclarationAgreesWithTheCode:
 
 
 class TestTheBatchDeclarationAgreesWithTheCode:
-    """⛔ The third drift, and it is the one `NS-02` added.
+    """⛔ The third drift, and it is the one the batch job added.
 
     A manifest is a WIRE shape: it takes no contract row of its own and is
-    versioned by `provides` (Ruling 330(b)). ⭐ **So the only thing standing
+    versioned by `provides`. ⭐ **So the only thing standing
     between a consumer and a silently changed promise is that the declaration
     and the module constants are asserted to be the same lists.**
     """
@@ -308,7 +308,7 @@ class TestTheBatchDeclarationAgreesWithTheCode:
         assert cache["encoding"] == jobs_module.ADDRESSING["encoding"]
 
     def test_the_declared_VOICES_are_the_ones_the_adapter_offers(self, contract):
-        """⛔ The drift this file exists to catch, for `NS-04`'s half.
+        """⛔ The drift this file exists to catch, for the voice catalogue's half.
 
         ⚠️ **Both directions.** A voice declared and not offered is a caller
         told to use something that will be refused; a voice offered and not
@@ -348,7 +348,7 @@ class TestTheBatchDeclarationAgreesWithTheCode:
 
     def test_the_engine_MODEL_is_declared_PRESENT_and_really_is(self, api):
         """⛔ The opposite claim to the one above, and they are not the same
-        question (`CTO-69/19`, closed by `NS-04`).
+        question.
 
         ⚠️ **`engine_in_address: false` was read as covering the model and it
         never did.** The family and the hardware profile are outside the
@@ -370,13 +370,13 @@ class TestTheBatchDeclarationAgreesWithTheCode:
         assert api["manifest"]["one_entry_per_submitted_id"] is True
 
     def test_the_manifest_declares_the_key_that_versions_it(self, api):
-        """⛔ Ruling 330(b): the promise register, not a tenth `*_api`."""
+        """⛔ The promise register, not a tenth `*_api`."""
         assert api["manifest"]["versioned_by"] == "provides"
         assert "manifest_api" not in api
 
 
 class TestTheOptionalAdapterIsDeclaredAsOptional:
-    """⛔ `NS-06`. A consumer must not read the Dockerfile to learn this (R19).
+    """⛔ The optional adapter. A consumer must not read the Dockerfile to learn this (R19).
 
     ⚠️ **The condition worth declaring is not that the adapter exists** -- it is
     that it is a second WRITING PROCESS and does not share a store by default.
@@ -411,7 +411,7 @@ class TestTheOptionalAdapterIsDeclaredAsOptional:
 
 
 class TestTheProvidesGateActuallyGates:
-    """⛔ `CTO-69/18`: a version field that does not move when its own
+    """⛔ A version field that does not move when its own
     definition says it must is a gate that has stopped gating.
 
     ⭐ **`provides` is defined in `docs/api.md` as the version of "the routes,

@@ -14,7 +14,7 @@ environment: a startup line is the most-copied line in any operator's terminal.
 
 ## ⛔ `narrate.agent` IS IMPORTED INSIDE ITS OWN BRANCH, AND THAT IS THE ROW
 
-`NS-06`'s acceptance says *"the adapter is optional -- the service works fully
+The adapter's promise is *"the adapter is optional -- the service works fully
 without it"*, and an import at the top of this file would make that a claim
 rather than a property. ⭐ **Imported here, one line inside the `agent` branch,
 it is CHECKABLE**: start the serve path in a fresh interpreter and

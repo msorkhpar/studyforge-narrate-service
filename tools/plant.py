@@ -3,8 +3,7 @@
 ⛔ **A green suite that cannot go red measures nothing**, so every property this
 repository claims has a control that breaks it deliberately and names the test
 that fires. ⭐ **This module is that harness, and it is IN THE TREE because a
-reviewer must be able to confirm the repair rather than only the disclosure**
-(`CTO-69/11`).
+reviewer must be able to confirm the repair rather than only the disclosure**.
 
 ## ⛔ The failure this module is built around, and it happened
 
@@ -12,7 +11,7 @@ A plant is a text substitution. ⚠️ **If its anchor does not match, the
 substitution silently does nothing, the suite passes, and the run is recorded
 as a control that fired nothing** -- which converts *nothing was caught* into
 *nothing was wrong*. ⛔ **That is the worst failure a control harness has, and
-it occurred once during `NS-02`**: one plant of twelve did not apply and
+it occurred once during the batch-job work**: one plant of twelve did not apply and
 produced a green `292` that was very nearly reported as a reading.
 
 ⭐ **Two rules follow, and both are enforced here rather than remembered:**
@@ -24,7 +23,7 @@ produced a green `292` that was very nearly reported as a reading.
    one.** `run_controls` marks it `DID NOT FIRE`, which is the outcome a
    reader would otherwise have to notice by counting.
 
-⭐ **Restoration is from a copy taken BEFORE the plant, per file** (`W143`), and
+⭐ **Restoration is from a copy taken BEFORE the plant, per file**, and
 it happens in a `finally`, so an exception mid-run cannot leave a planted tree
 behind.
 
@@ -148,8 +147,8 @@ def run_controls(controls, root=ROOT, run=_pytest, report=print):
     """Every control in turn. Returns the results; ⛔ a miss is a failure.
 
     ⛔ **The report names the ANCHOR, the EXPECTED test and the ACTUAL failures,
-    per control** — Ruling 342, which holds that a control table reports that
-    something fired and never that the *right* thing fired. ⭐ A count cannot
+    per control** — because a control table that reports only that something
+    fired never says that the *right* thing fired. ⭐ A count cannot
     distinguish those two, so a count is not what this prints.
     """
     results = []
@@ -283,7 +282,7 @@ CONTROLS = (
         replacement='"over": [\n        "format",\n        "voice",\n        "chunk_chars",\n        "text"\n      ],',
         expects="test_the_declared_addressing_is_what_the_code_actually_hashes",
     ),
-    # ⛔ The two below are the controls for `CTO-69/7` and `CTO-69/9`, and they
+    # ⛔ The two below are the controls for the shared staging path and the missing chunk budget, and they
     # are the reason the catalogue is committed: they are what a reviewer runs
     # to confirm the repair rather than reading a table about it.
     Control(
@@ -296,7 +295,7 @@ CONTROLS = (
                     "    handle = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)",
         expects="test_concurrent_writers_to_one_address_use_DIFFERENT_temporaries",
     ),
-    # ⛔ `CTO-69/14`: the publish lock was the previous commit's headline
+    # ⛔ The publish lock was the previous commit's headline
     # addition and NO control planted it. These two are its halves.
     Control(
         id="p14", what="the WRITE-side publish lock is removed",
@@ -323,8 +322,8 @@ CONTROLS = (
                     "                  engine_model, text):",
         expects="test_the_CHUNK_BUDGET",
     ),
-    # ⛔ NS-04 and NS-06. The first two plant this branch's two correctness
-    # claims; the third plants the one carried lesson `E13` states as an
+    # ⛔ The voice catalogue and the agent adapter. The first two plant their two
+    # correctness claims; the third plants the one carried lesson stated as an
     # acceptance clause rather than as advice.
     Control(
         id="p16", what="the engine model is dropped from the address again",

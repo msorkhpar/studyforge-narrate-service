@@ -107,7 +107,7 @@ class TestAJobOfManySegments:
         assert identifier not in json.dumps(manifest)
 
     def test_the_manifest_declares_the_promise_that_produced_it(self, tmp_path):
-        """⛔ Ruling 330(b): a wire shape is versioned by `provides`."""
+        """⛔ A wire shape is versioned by `provides`."""
         manifest, _, _ = submit(FOUR, tmp_path)
         assert manifest["provides"] == PROVIDES
 
@@ -168,10 +168,10 @@ class TestResubmittingAnUnchangedJob:
     def test_a_cached_segment_reports_the_engine_that_MADE_it(self, tmp_path):
         """⛔ Never the engine deployed now. That would be the first lie here.
 
-        `NS-03` named this exact hazard for this task: a redeployment must not
+        The engine-reporting requirement names this exact hazard: a redeployment must not
         make every cached artifact claim it was produced by the new engine.
 
-        ⚠️ **THE REDEPLOYMENT DRIVEN HERE CHANGED WHEN NS-04 LANDED, and the
+        ⚠️ **THE REDEPLOYMENT DRIVEN HERE CHANGED WHEN THE MODEL JOINED THE ADDRESS, and the
         change is the point rather than an adjustment to make a test pass.**
         This case used to move the profile AND the model together; the model
         is now part of the content address, so that pair is no longer a cache
@@ -193,7 +193,7 @@ class TestResubmittingAnUnchangedJob:
             assert entry["engine_model"] == "one-model"
 
     def test_a_MODEL_change_is_not_a_cache_hit_and_re_synthesises(self, tmp_path):
-        """⛔ NS-04, closing `CTO-69/19`. The other half of the test above.
+        """⛔ The other half of the test above.
 
         ⚠️ **Before this, swapping the model kept every address**: a corpus
         stayed "cached", every clip went on speaking in the old model's voice,
@@ -258,7 +258,7 @@ class TestChangingOneSegment:
             assert before[other]["artifact_id"] == after[other]["artifact_id"]
 
     def test_changing_the_voice_moves_EVERY_address(self, tmp_path):
-        """⭐ `NS-04`'s clause, already true: a voice is part of the address."""
+        """⭐ Already true: a voice is part of the address."""
         store = ArtifactStore(tmp_path)
         first, _, _ = submit(FOUR, tmp_path, store=store)
         second, engine, _ = submit(FOUR, tmp_path, voice="af_bella", store=store)
@@ -464,7 +464,7 @@ class TestARequestThatIsNotAJobNeverRuns:
     ):
         """⛔ Validation covers the WHOLE list before any segment runs.
 
-        ⚠️ **This test replaces one that was born vacuous** (`CTO-69/10`): it
+        ⚠️ **This test replaces one that was born vacuous**: it
         built an engine and a `tmp_path`, wired NEITHER into anything, and then
         asserted the engine made no calls and the directory was empty -- both
         true by construction, whatever the code did, and it survived a revert
@@ -492,7 +492,7 @@ class TestARequestThatIsNotAJobNeverRuns:
 
 
 class TestTheVoiceIsValidatedForTheWHOLEJob:
-    """⛔ NS-04. A voice applies to every segment, so an unknown one is a
+    """⛔ A voice applies to every segment, so an unknown one is a
     property of the REQUEST -- refused once, before anything is attempted.
 
     ⚠️ **Before this, an unknown voice reached the engine and came back as one

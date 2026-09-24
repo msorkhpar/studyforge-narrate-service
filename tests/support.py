@@ -153,5 +153,5 @@ class FakeEngine:
         return self._reachable
 
     def voices(self):
-        """⭐ The fourth member of the adapter contract (NS-04)."""
+        """⭐ The fourth member of the adapter contract."""
         return self._catalogue
