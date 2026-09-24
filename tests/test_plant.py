@@ -15,10 +15,17 @@ control -- which is the whole failure mode, arriving from the other direction.
 
 from __future__ import annotations
 
+import signal
+import subprocess
+import sys
+import textwrap
+from pathlib import Path
+
 import pytest
 
 from tools.plant import (
     CONTROLS,
+    TERMINATING,
     Control,
     PlantDidNotApply,
     failing_tests,
@@ -78,6 +85,55 @@ class TestRestoration:
                 assert sample.read_text(encoding="utf-8") != before.decode()
                 1 / 0
         assert sample.read_bytes() == before
+
+    @pytest.mark.parametrize("signum", TERMINATING, ids=lambda s: signal.Signals(s).name)
+    def test_a_KILLED_plant_run_restores_the_file(self, sample, signum):
+        """⛔ The failure that happened: `timeout` stopped a run and the plant stayed.
+
+        A child process arms a plant and waits; the signal arrives while it is
+        armed. The file must be back byte for byte, and the child must still
+        exit non-zero, so the kill is never mistaken for a finished run.
+        """
+        before = sample.read_bytes()
+        child = subprocess.Popen(
+            [sys.executable, "-c", textwrap.dedent(f"""
+                import sys, time
+                from tools.plant import planted
+                with planted({str(sample)!r}, "beta", "BETA"):
+                    print("armed", flush=True)
+                    time.sleep(60)
+            """)],
+            cwd=str(Path(__file__).resolve().parents[1]),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        try:
+            assert child.stdout.readline().strip() == "armed"
+            assert sample.read_text(encoding="utf-8") == "alpha\nBETA\ngamma\n"
+            child.send_signal(signum)
+            child.wait(timeout=30)
+        finally:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+            child.stdout.close()
+            child.stderr.close()
+        assert sample.read_bytes() == before
+        assert child.returncode != 0
+
+    def test_the_signal_handlers_are_put_back_after_the_block(self, sample):
+        """A handler of the caller's own is what it finds again afterwards."""
+
+        def ours(signum, frame):
+            """A sentinel no other test installs."""
+
+        found = {each: signal.signal(each, ours) for each in TERMINATING}
+        try:
+            with planted(sample, "beta", "BETA"):
+                assert all(signal.getsignal(each) is not ours for each in TERMINATING)
+            assert all(signal.getsignal(each) is ours for each in TERMINATING)
+        finally:
+            for each, handler in found.items():
+                signal.signal(each, handler)
 
     def test_a_refused_plant_never_enters_the_block(self, sample):
         entered = []
