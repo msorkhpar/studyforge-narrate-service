@@ -194,7 +194,10 @@ control that breaks it deliberately and names the test that must fire. ⚠️ **
 anchor that does not match exactly once is refused** rather than silently
 applying nothing, and the ordinary suite asserts that every committed anchor
 still resolves — so a refactor that moves one turns the harness red instead of
-quietly disarming a control. That the real engine accepts the request shape is
+quietly disarming a control. ⭐ **A run stopped by `timeout` (SIGTERM) or a
+closed terminal (SIGHUP) still restores the planted file** and exits non-zero;
+only SIGKILL, which no process can catch, leaves a plant for `git status` to
+show. That the real engine accepts the request shape is
 established by a recorded measurement, not by a test that skips when the
 deployment is down. ⭐ **That measurement is
 [`docs/engine-measurement.md`](docs/engine-measurement.md)** — the CPU profile

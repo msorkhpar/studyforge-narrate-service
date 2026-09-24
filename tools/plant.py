@@ -27,6 +27,15 @@ produced a green `292` that was very nearly reported as a reading.
 it happens in a `finally`, so an exception mid-run cannot leave a planted tree
 behind.
 
+⛔ **A `finally` alone did not survive a kill, and it happened.** SIGTERM (what
+`timeout` sends) and SIGHUP (a closed terminal) end the process by default
+without unwinding the stack, so the `finally` never ran and a planted source
+file stayed in the working tree. ⭐ **While a plant is armed, both signals are
+turned into an exception** (`Killed`), so the stack unwinds, the `finally`
+restores, and the process still exits non-zero. The previous handlers are put
+back when the block ends. ⚠️ SIGKILL cannot be caught by any process; a plant
+killed that way is visible in `git status`, and `git checkout` restores it.
+
 ## Running it
 
 ```bash
@@ -38,8 +47,10 @@ python3 -m tools.plant p07        # one, by id
 from __future__ import annotations
 
 import argparse
+import signal
 import subprocess
 import sys
+import threading
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -49,6 +60,22 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class PlantDidNotApply(RuntimeError):
     """The anchor did not match exactly once. ⛔ No reading may be reported."""
+
+
+class Killed(BaseException):
+    """A terminating signal arrived while a plant was armed.
+
+    ⭐ A `BaseException`, like `KeyboardInterrupt`, so no `except Exception`
+    between the signal and the `finally` can swallow it.
+    """
+
+    def __init__(self, signum):
+        super().__init__(f"killed by signal {signum} while a plant was armed")
+        self.signum = signum
+
+
+#: The signals that end the process by default without unwinding it.
+TERMINATING = (signal.SIGTERM, signal.SIGHUP)
 
 
 @dataclass(frozen=True)
@@ -102,14 +129,42 @@ def restore(path, original):
     Path(path).write_text(original, encoding="utf-8")
 
 
+def _raise_killed(signum, frame):
+    raise Killed(signum)
+
+
 @contextmanager
-def planted(path, anchor, replacement):
-    """Plant for the duration of the block, and restore whatever happens."""
-    original = plant(path, anchor, replacement)
+def _signals_unwind():
+    """For the block, make SIGTERM and SIGHUP raise `Killed` instead of exiting.
+
+    ⚠️ Python installs signal handlers only from the main thread; elsewhere the
+    block runs with the handlers it found, which is the old behaviour.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous = {each: signal.signal(each, _raise_killed) for each in TERMINATING}
     try:
         yield
     finally:
-        restore(path, original)
+        for each, handler in previous.items():
+            signal.signal(each, handler)
+
+
+@contextmanager
+def planted(path, anchor, replacement):
+    """Plant for the duration of the block, and restore whatever happens.
+
+    ⭐ "Whatever happens" includes SIGTERM and SIGHUP (see the module note).
+    The handlers are armed BEFORE the plant, so no signal can land between the
+    write and the `try`.
+    """
+    with _signals_unwind():
+        original = plant(path, anchor, replacement)
+        try:
+            yield
+        finally:
+            restore(path, original)
 
 
 def failing_tests(output):
@@ -359,7 +414,11 @@ def main(argv=None):
     chosen = [c for c in CONTROLS if not arguments.ids or c.id in arguments.ids]
     if not chosen:
         parser.error(f"no control matched {arguments.ids}")
-    results = run_controls(chosen)
+    try:
+        results = run_controls(chosen)
+    except Killed as killed:
+        print(f"\n⛔ {killed}; the planted file was restored and no reading may be reported")
+        return 128 + killed.signum
     missed = [r for r in results if not r.ok]
     print(f"\n{len(results) - len(missed)} of {len(results)} control(s) fired "
           "on the test that names their property")
