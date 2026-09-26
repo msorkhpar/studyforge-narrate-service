@@ -123,7 +123,11 @@ curl -fsS -X POST http://127.0.0.1:8870/v1/jobs \
 ⛔ **The engine is not published** — it is reachable only from the compose
 project's network, only by this service. ⛔ **The service binds `127.0.0.1` on
 the host**: it has no authentication of its own. ⛔ **No docker socket is
-mounted anywhere.**
+mounted anywhere.** ⭐ **It runs on any engine, Docker Desktop and Windows
+included** (a register direction): the one store is the named volume
+`artifacts`, the engine's own, and nothing is bound from the host, so no host
+path or temporary directory is ever a dependency. `docker compose` uses the
+engine `DOCKER_CONTEXT` (or the current context) names.
 
 ### Profiles — CPU by default, GPU by opting in
 
