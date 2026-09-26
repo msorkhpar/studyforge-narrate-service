@@ -19,6 +19,7 @@ explaining why the file must not contain them.**
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -181,6 +182,23 @@ class TestTheComposeFilesAgreeWithTheDeclaration:
         assert contract["service"]["docker_socket"] is False
         assert "docker.sock" not in cpu_compose
         assert "docker.sock" not in gpu_compose
+
+    def test_no_profile_binds_a_host_path_so_any_engine_runs_it(
+        self, contract, cpu_compose, gpu_compose
+    ):
+        """⭐ Register direction: every docker step runs on any engine, Windows included.
+
+        ⛔ A host path in a volume entry is one machine's layout, and a host
+        temporary directory is one Docker Desktop does not share and Windows does
+        not have. Every store is a named volume the engine owns.
+        """
+        assert all(mount["kind"] == "volume" for mount in contract["service"]["mounts"])
+        mounted = {name: re.findall(r'^\s+-\s+"?([^\s":]+):/', text, re.M)
+                   for name, text in (("cpu", cpu_compose), ("gpu", gpu_compose))}
+        assert mounted["cpu"] == ["artifacts"], "the reading found no volume, so it proves nothing"
+        for sources in mounted.values():
+            for source in sources:
+                assert not any(mark in source for mark in "/\\.~$"), source
 
     def test_the_declared_host_port_binding_is_loopback_in_the_file(
         self, contract, cpu_compose
