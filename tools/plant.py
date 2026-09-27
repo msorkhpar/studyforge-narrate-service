@@ -74,8 +74,9 @@ class Killed(BaseException):
         self.signum = signum
 
 
-#: The signals that end the process by default without unwinding it.
-TERMINATING = (signal.SIGTERM, signal.SIGHUP)
+#: The signals that end the process by default without unwinding it. ⭐ Those
+#: this host has: Windows has no SIGHUP, and a closed console there is not one.
+TERMINATING = tuple(getattr(signal, name) for name in ("SIGTERM", "SIGHUP") if hasattr(signal, name))
 
 
 @dataclass(frozen=True)
