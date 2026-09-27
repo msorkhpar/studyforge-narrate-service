@@ -238,3 +238,18 @@ class TestTheCommittedCatalogue:
             for path in sorted((ROOT / "tests").glob("test_*.py"))
         )
         assert f"def {control.expects}" in names, control.expects
+
+
+def test_the_harness_imports_on_a_host_with_no_sighup(monkeypatch):
+    """⛔ Windows' `signal` has no SIGHUP: the harness must still load there, with TERM."""
+    import importlib
+
+    import tools.plant as module
+
+    monkeypatch.delattr(signal, "SIGHUP")
+    try:
+        reloaded = importlib.reload(module)
+        assert reloaded.TERMINATING == (signal.SIGTERM,)
+    finally:
+        monkeypatch.undo()
+        importlib.reload(module)

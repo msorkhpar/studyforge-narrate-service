@@ -120,6 +120,31 @@ curl -fsS -X POST http://127.0.0.1:8870/v1/jobs \
                        {"id": "u01-s002", "text": "The second speech unit."}]}'
 ```
 
+In PowerShell on Windows, where a line continues with a backtick and `curl` may
+name another command, the same three requests are:
+
+```powershell
+docker compose up -d --build
+
+Invoke-RestMethod http://127.0.0.1:8870/healthz
+
+# one text, one file, in one round trip
+Invoke-WebRequest -Method Post http://127.0.0.1:8870/v1/speech `
+    -ContentType 'application/json' `
+    -Body '{"text": "Synthesis is behind an API of its own."}' `
+    -OutFile speech.mp3
+
+# a batch of keyed segments, and a manifest of addresses back
+Invoke-RestMethod -Method Post http://127.0.0.1:8870/v1/jobs `
+    -ContentType 'application/json' `
+    -Body '{"segments": [{"id": "u01-s001", "text": "The first speech unit."},
+                         {"id": "u01-s002", "text": "The second speech unit."}]}'
+```
+
+⭐ Every command in this README runs on Windows as on Linux and macOS (a register
+direction). Where a POSIX shell and PowerShell spell one differently, both are
+shown; elsewhere, `python3` is `python` or `py -3` on Windows.
+
 ⛔ **The engine is not published** — it is reachable only from the compose
 project's network, only by this service. ⛔ **The service binds `127.0.0.1` on
 the host**: it has no authentication of its own. ⛔ **No docker socket is
@@ -173,6 +198,10 @@ any reachable engine:
 
 ```bash
 NARRATE_ENGINE_URL=http://127.0.0.1:8880/v1 python3 -m narrate serve
+```
+
+```powershell
+$env:NARRATE_ENGINE_URL = 'http://127.0.0.1:8880/v1'; python -m narrate serve
 ```
 
 ## The suite
