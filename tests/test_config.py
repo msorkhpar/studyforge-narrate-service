@@ -135,7 +135,7 @@ class TestTheEngineAndItsProfile:
 
     @pytest.mark.parametrize("variable", ["NARRATE_ENGINE", "NARRATE_ENGINE_PROFILE"])
     def test_neither_refusal_echoes_the_value(self, variable):
-        """⛔ An environment variable is where an identifier turns up (R7)."""
+        """⛔ An environment variable is where an identifier turns up."""
         with pytest.raises(ConfigError) as raised:
             from_environment({variable: "jane-doe-at-example-com"})
         assert "jane-doe-at-example-com" not in str(raised.value)

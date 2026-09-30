@@ -3,7 +3,7 @@
 ⛔ **A green suite that cannot go red measures nothing**, so every property this
 repository claims has a control that breaks it deliberately and names the test
 that fires. ⭐ **This module is that harness, and it is IN THE TREE because a
-reviewer must be able to confirm the repair rather than only the disclosure**.
+reader must be able to confirm the repair rather than only the disclosure**.
 
 ## ⛔ The failure this module is built around, and it happened
 
@@ -11,7 +11,7 @@ A plant is a text substitution. ⚠️ **If its anchor does not match, the
 substitution silently does nothing, the suite passes, and the run is recorded
 as a control that fired nothing** -- which converts *nothing was caught* into
 *nothing was wrong*. ⛔ **That is the worst failure a control harness has, and
-it occurred once during the batch-job work**: one plant of twelve did not apply and
+it occurred once during development**: one plant of twelve did not apply and
 produced a green `292` that was very nearly reported as a reading.
 
 ⭐ **Two rules follow, and both are enforced here rather than remembered:**
@@ -339,7 +339,7 @@ CONTROLS = (
         expects="test_the_declared_addressing_is_what_the_code_actually_hashes",
     ),
     # ⛔ The two below are the controls for the shared staging path and the missing chunk budget, and they
-    # are the reason the catalogue is committed: they are what a reviewer runs
+    # are the reason the catalogue is committed: they are what a reader runs
     # to confirm the repair rather than reading a table about it.
     Control(
         id="p12", what="the staging temporary is named from its destination again",

@@ -3,7 +3,7 @@
 The transport is injected, so the shape of the request the engine receives is
 asserted without an engine running. What this cannot prove is that the engine
 *accepts* that shape; that is established by a recorded measurement against the
-real engine, and the command and its output are in the handoff.
+real engine, and the command and its output are in docs/engine-measurement.md.
 """
 
 from __future__ import annotations

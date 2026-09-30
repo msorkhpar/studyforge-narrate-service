@@ -70,7 +70,7 @@ def test_an_unknown_engine_is_refused_naming_what_is_permitted():
 
 
 def test_the_refusal_never_echoes_the_value_that_arrived():
-    """⛔ Same rule as every other refusal in this service (R7)."""
+    """⛔ Same rule as every other refusal in this service (no echo)."""
     with pytest.raises(UnknownEngine) as raised:
         build_engine(Config(engine="an-account-identifier-someone-pasted"))
     assert "an-account-identifier-someone-pasted" not in str(raised.value)

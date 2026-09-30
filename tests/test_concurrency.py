@@ -255,9 +255,8 @@ def test_the_temporary_is_still_a_sibling_and_still_cleaned_up(tmp_path, payload
 # ⛔ The PUBLISH LOCK, which a review correctly charged as proved by nothing.
 #
 # ⚠️ **The unique temporary and the lock are two different properties and the
-# tests above only reach the first.** A reviewer nulled the lock on a clean
-# extract and the whole suite stayed green -- in the commit that shipped a
-# thirteen-control harness. Everything below fails without it, and controls
+# tests above only reach the first.** Nulling the lock on a clean
+# extract left the whole suite green, once, before these tests existed. Everything below fails without it, and controls
 # `p14` and `p15` plant its two halves.
 # ---------------------------------------------------------------------------
 

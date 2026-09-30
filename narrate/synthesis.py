@@ -5,7 +5,7 @@ Five steps, in this order, and the order is the design:
 0. **Address** the request (`narrate.artifacts.address_for`) and look it up in
    the store. ⭐ **A hit returns immediately and the engine is never called** --
    which is the whole of the idempotence this service promises, and the
-   mechanism R10's audio carve-out names. ⛔ **The address covers `chunk_chars`
+   mechanism the audio carve-out names. ⛔ **The address covers `chunk_chars`
    and `engine_model` as well as the text, the voice and the format**, because
    step 1 below is what the budget changes, steps 2-4 all follow from it, and
    the model is what decides how the voice sounds.

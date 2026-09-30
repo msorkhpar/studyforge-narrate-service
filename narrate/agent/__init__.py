@@ -52,7 +52,7 @@ rather than inferring it.
 
 ## ⛔ NO PERSONAL-DATA GATE LIVES HERE, AND THAT IS NOT AN OVERSIGHT
 
-The gate is ruled client-side and pre-request (spec R7), and this
+The gate is ruled client-side and pre-request (the no-echo rule), and this
 package is inside the service. ⚠️ **The caller of this adapter is an agent, so
 the AGENT is the gate's owner** -- there is no `narrate.client` between it and
 the engine. ⛔ **Every tool description below says so in the text the model

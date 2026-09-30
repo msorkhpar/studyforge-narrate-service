@@ -18,8 +18,8 @@ cannot parse as one.
 ⛔ **NO PATH OUTSIDE THE STORE IS EVER RETURNED, and no absolute one.** The
 adapter answers with the content address, the service-relative URL and the
 file's name within the store. A store directory is either a container path or
-somebody's home directory (R7), and the caller does not need it: `narrate`
-returns artifacts and never decides where they land (R4).
+somebody's home directory, and the caller does not need it: `narrate`
+returns artifacts and never decides where they land.
 """
 
 from __future__ import annotations

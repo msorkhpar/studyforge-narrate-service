@@ -374,7 +374,7 @@ def test_the_server_header_does_not_name_the_python_version(service):
 
 
 def test_a_response_never_carries_the_text_that_was_sent(service):
-    """R7's shape at the response boundary, over the wire."""
+    """The no-echo shape at the response boundary, over the wire."""
     identifier = "profile-9876543210"
     request = service(FakeEngine(fail_with=EngineFailed("the engine returned HTTP 500")))
     response, data = request("POST", "/v1/speech", {"text": f"Visit {identifier}."})

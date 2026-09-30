@@ -68,7 +68,7 @@ def test_the_artifact_is_a_real_mpeg_stream(tmp_path):
 
 
 def test_the_summary_never_carries_the_text(tmp_path):
-    """R7's shape at the response boundary."""
+    """The no-echo shape at the response boundary."""
     identifier = "profile-9876543210"
     result, _ = run(f"Visit {identifier} for details.", tmp_path)
     assert identifier not in repr(result.summary())
