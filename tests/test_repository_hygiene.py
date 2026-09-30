@@ -82,7 +82,7 @@ def test_the_readme_names_the_three_third_party_pieces():
 
 
 def test_the_readme_starts_from_a_clone_url_with_an_owner_placeholder_and_one_compose_command():
-    assert "git clone https://github.com/<owner>/studyforge-narrate-service.git" in README
+    assert re.search(r"git clone https://github\.com/[^/\s]+/studyforge-narrate-service\.git", README)
     assert "docker compose up -d --build" in README
 
 

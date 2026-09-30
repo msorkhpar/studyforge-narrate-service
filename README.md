@@ -86,13 +86,13 @@ Both are argued in [`docs/api.md`](docs/api.md).
 ## Get it and start it
 
 ```bash
-git clone https://github.com/<owner>/studyforge-narrate-service.git
+git clone https://github.com/msorkhpar/studyforge-narrate-service.git
 cd studyforge-narrate-service
 docker compose up -d --build
 ```
 
 This repository is `studyforge-narrate-service`, the narration component of the
-`studyforge` framework (`https://github.com/<owner>/studyforge.git`). That one `docker compose`
+`studyforge` framework (`https://github.com/msorkhpar/studyforge.git`). That one `docker compose`
 command builds the service image, pulls the pinned engine image on first use
 and starts both; the rest of this README assumes you are in the clone.
 
