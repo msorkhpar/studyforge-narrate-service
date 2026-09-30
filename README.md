@@ -1,4 +1,4 @@
-# narrate-service
+# studyforge-narrate-service
 
 Turn text into speech, over HTTP, in a container. Standard library only.
 
@@ -86,12 +86,13 @@ Both are argued in [`docs/api.md`](docs/api.md).
 ## Get it and start it
 
 ```bash
-git clone <clone-url> narrate-service
-cd narrate-service
+git clone https://github.com/<owner>/studyforge-narrate-service.git
+cd studyforge-narrate-service
 docker compose up -d --build
 ```
 
-`<clone-url>` is wherever this repository is hosted. That one `docker compose`
+This repository is `studyforge-narrate-service`, the narration component of the
+`studyforge` framework (`https://github.com/<owner>/studyforge.git`). That one `docker compose`
 command builds the service image, pulls the pinned engine image on first use
 and starts both; the rest of this README assumes you are in the clone.
 

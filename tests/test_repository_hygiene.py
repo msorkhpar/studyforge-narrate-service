@@ -4,7 +4,7 @@
   hand-off and no office in any tracked file. Those are how the work was
   organised, not what the service is, and they mean nothing to a reader.
 - ⭐ The README says where the third-party pieces come from, says how to get the
-  repository by a clone URL placeholder, and does not assume a checkout.
+  repository by a clone URL with an `<owner>` placeholder, and does not assume a checkout.
 
 Tracked files are read from git when it is available and from the tree
 otherwise, so the check runs in a plain clone or an unpacked archive.
@@ -81,8 +81,8 @@ def test_the_readme_names_the_three_third_party_pieces():
         assert name in body, f"{name} is not named in the Third-party section"
 
 
-def test_the_readme_starts_from_a_clone_url_placeholder_and_one_compose_command():
-    assert "git clone <clone-url>" in README
+def test_the_readme_starts_from_a_clone_url_with_an_owner_placeholder_and_one_compose_command():
+    assert "git clone https://github.com/<owner>/studyforge-narrate-service.git" in README
     assert "docker compose up -d --build" in README
 
 
