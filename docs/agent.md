@@ -88,7 +88,7 @@ The result's text is JSON:
 ⛔ **No path outside the store is ever returned, and no absolute one.** `file`
 is the name *within* the store. A store directory is either a container path or
 somebody's home directory, and `narrate` never decides where an artifact lands
-in your tree — that is yours (R4).
+in your tree — that is yours.
 
 ### `narrate_batch`
 

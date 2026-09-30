@@ -99,7 +99,7 @@ class TestAJobOfManySegments:
             assert entry["bytes"] > 0
 
     def test_the_manifest_never_carries_the_text(self, tmp_path):
-        """R7's shape at the response boundary, for the batch route too."""
+        """The no-echo shape at the response boundary, for the batch route too."""
         identifier = "profile-9876543210"
         manifest, _, _ = submit(
             [{"id": "s1", "text": f"Visit {identifier} for details."}], tmp_path

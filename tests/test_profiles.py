@@ -72,7 +72,7 @@ class TestTheFileItself:
         """⚠️ Three different questions and none substitutes for another.
 
         The pin file records which BUILD, `provides` which PROMISE, and
-        `consuming_api` this file's own SCHEMA (spec R9).
+        `consuming_api` this file's own SCHEMA.
         """
         assert str(contract["provides"]) != narrate.__version__
         assert contract["provides"] != contract["consuming_api"]
@@ -103,7 +103,7 @@ class TestTheFileItself:
 
 class TestTheProfiles:
     def test_the_default_profile_is_cpu(self, contract):
-        """⛔ R15. The path that works anywhere is the one you get by default."""
+        """⛔ The path that works anywhere is the one you get by default."""
         assert contract["profiles"]["default"] == "cpu"
 
     def test_the_cpu_profile_requires_no_gpu_and_no_vendor_runtime(self, contract):
@@ -186,7 +186,7 @@ class TestTheComposeFilesAgreeWithTheDeclaration:
     def test_no_profile_binds_a_host_path_so_any_engine_runs_it(
         self, contract, cpu_compose, gpu_compose
     ):
-        """⭐ Register direction: every docker step runs on any engine, Windows included.
+        """⭐ Every docker step runs on any engine, Windows included.
 
         ⛔ A host path in a volume entry is one machine's layout, and a host
         temporary directory is one Docker Desktop does not share and Windows does
@@ -388,13 +388,13 @@ class TestTheBatchDeclarationAgreesWithTheCode:
         assert api["manifest"]["one_entry_per_submitted_id"] is True
 
     def test_the_manifest_declares_the_key_that_versions_it(self, api):
-        """⛔ The promise register, not a tenth `*_api`."""
+        """⛔ The promise version, not a tenth `*_api`."""
         assert api["manifest"]["versioned_by"] == "provides"
         assert "manifest_api" not in api
 
 
 class TestTheOptionalAdapterIsDeclaredAsOptional:
-    """⛔ The optional adapter. A consumer must not read the Dockerfile to learn this (R19).
+    """⛔ The optional adapter. A consumer must not read the Dockerfile to learn this.
 
     ⚠️ **The condition worth declaring is not that the adapter exists** -- it is
     that it is a second WRITING PROCESS and does not share a store by default.
@@ -435,7 +435,7 @@ class TestTheProvidesGateActuallyGates:
     ⭐ **`provides` is defined in `docs/api.md` as the version of "the routes,
     the manifest's shape, and the cache's behaviour".** ⚠️ **Nothing made that
     mechanical** — it relied on whoever changed one of the three remembering
-    what the definition said, and the office that changed two of them did not.
+    what the definition said, and a change to two of them once went unnoticed.
 
     ⛔ **So the three components are PINNED here beside the number.** A change
     to any of them fails this class, which is the moment the bump question has
@@ -445,7 +445,7 @@ class TestTheProvidesGateActuallyGates:
     """
 
     #: The observable promise at `provides == 2`. ⛔ Update WITH the bump, in
-    #: the same commit, or explain in the handoff why the change is invisible.
+    #: the same commit, or explain in the commit message why the change is invisible.
     PROMISED_ROUTES = (
         ("GET", "/healthz"),
         ("GET", "/v1/voices"),
@@ -488,7 +488,7 @@ class TestTheProvidesGateActuallyGates:
         assert ADDRESS_SCHEME == self.PROMISED_ADDRESS_SCHEME
 
     def test_2_IS_a_published_version_now_so_3_is_the_next_one(self):
-        """⚠️ Why `3`, and why the previous round's argument does not apply.
+        """⚠️ Why `3`, and why the earlier argument does not apply.
 
         ⛔ **The reasoning this replaces was correct WHEN IT WAS WRITTEN and is
         not correct now**, and that is the whole content of this test. It ran:

@@ -19,7 +19,7 @@ passed.
 ⭐ **So the assertions below are driven from the SYNTHESIS PATH, not from a
 declaration.** Each varies one input, synthesises twice, and asserts the audio
 really did change **and** the address changed with it. A control that compares
-two things an office controls is worth having; it is not evidence about the
+two things the author controls is worth having; it is not evidence about the
 world.
 
 ## ⛔ WHAT THIS MODULE DOES NOT PROVE, named because its class was once named as though it did
@@ -187,7 +187,7 @@ class TestEachEnumeratedInputChangesTheAddress:
 
 class TestTheProducedBytesAreNotInTheAddress:
     def test_two_engines_emitting_DIFFERENT_bytes_give_ONE_address(self, tmp_path):
-        """⛔ R10's carve-out, as the thing that makes the cache possible.
+        """⛔ The audio carve-out, as the thing that makes the cache possible.
 
         ⚠️ **This is the claim a replaced test only gestured at** -- it asserted
         that an address was a non-empty string. Here two engines

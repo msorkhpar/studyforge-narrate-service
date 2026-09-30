@@ -23,7 +23,7 @@ cost:**
 * validation works with the engine down, so a bad job is refused in
   milliseconds instead of failing three thousand times;
 * the catalogue can be published in `consuming.json`, which is a **file** a
-  consumer reads without running anything (spec R19);
+  consumer reads without running anything;
 * it is a pure function, so the suite needs no engine and no GPU.
 
 ⛔ **The cost is a real one and it is not hidden: a declared catalogue can

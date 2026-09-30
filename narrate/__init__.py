@@ -34,8 +34,7 @@ __version__ = "0.1.0"
 #: ⛔ The version of **the promise this service makes**, and the single source
 #: of the `provides` key in `consuming.json` -- a test asserts the two agree.
 #: ⚠️ It is neither `__version__` nor the component's commit: a build changes
-#: without the promise changing, and the promise can change without a new build
-#: (spec R9).
+#: without the promise changing, and the promise can change without a new build.
 #:
 #: ⭐ `3` because the voice catalogue and the agent adapter changed what a caller may rely on again,
 #: in all three of the things `provides` versions:

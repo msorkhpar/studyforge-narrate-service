@@ -4,7 +4,7 @@
      Deliberate, and declared here rather than left to be noticed: an API
      reference is answered in one read or it is answered twice, and splitting
      the routes across files makes a consumer open two of them to learn what
-     one call returns. R11's own escape is written for CODE modules
+     one call returns. The usual limit is written for CODE modules
      ("justified in the module's own docstring") and this is the nearest
      equivalent for a document. Every source and test module in this
      repository is inside its limit.
@@ -421,7 +421,7 @@ failure reasons, the segment and body caps, and the addressing block.**
 
 ⚠️ **The manifest itself has no version key of its own, and that is deliberate.**
 It is a response body rather than a file, so it is versioned by the promise
-register that already exists: `provides`, here and echoed in every manifest. A
+version that already exists: `provides`, here and echoed in every manifest. A
 second version number would be a second authority on one shape.
 
 ---

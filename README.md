@@ -83,9 +83,21 @@ And one the service adds:
 
 Both are argued in [`docs/api.md`](docs/api.md).
 
+## Get it and start it
+
+```bash
+git clone <clone-url> narrate-service
+cd narrate-service
+docker compose up -d --build
+```
+
+`<clone-url>` is wherever this repository is hosted. That one `docker compose`
+command builds the service image, pulls the pinned engine image on first use
+and starts both; the rest of this README assumes you are in the clone.
+
 ## Build the image
 
-The service's image is built from this directory's `Dockerfile`, on a base
+The service's image is built from the repository's `Dockerfile`, on a base
 pinned by digest, and installs nothing: the service is standard library only.
 The contract names the tag a consumer runs, `service.image` in
 [`consuming.json`](consuming.json) (`narrate-service:local`), and
@@ -101,6 +113,8 @@ in `compose.yaml` (CPU) and `compose.gpu.yaml` (GPU), and pulled once by that
 digest; after that `--pull never` keeps every later run offline.
 
 ## Run it
+
+From the clone (see *Get it and start it*):
 
 ```bash
 docker compose up -d --build
@@ -141,18 +155,51 @@ Invoke-RestMethod -Method Post http://127.0.0.1:8870/v1/jobs `
                          {"id": "u01-s002", "text": "The second speech unit."}]}'
 ```
 
-⭐ Every command in this README runs on Windows as on Linux and macOS (a register
-direction). Where a POSIX shell and PowerShell spell one differently, both are
+⭐ Every command in this README runs on Windows as on Linux and macOS (a design
+rule). Where a POSIX shell and PowerShell spell one differently, both are
 shown; elsewhere, `python3` is `python` or `py -3` on Windows.
 
 ⛔ **The engine is not published** — it is reachable only from the compose
 project's network, only by this service. ⛔ **The service binds `127.0.0.1` on
 the host**: it has no authentication of its own. ⛔ **No docker socket is
 mounted anywhere.** ⭐ **It runs on any engine, Docker Desktop and Windows
-included** (a register direction): the one store is the named volume
+included**: the one store is the named volume
 `artifacts`, the engine's own, and nothing is bound from the host, so no host
 path or temporary directory is ever a dependency. `docker compose` uses the
 engine `DOCKER_CONTEXT` (or the current context) names.
+
+### Reaching it from another machine
+
+Out of the box it cannot be reached from another machine, by design. Two
+settings are involved, and they are different things:
+
+- `NARRATE_BIND` (default `127.0.0.1`, [`narrate/config.py`](narrate/config.py))
+  is the address the process listens on. The `Dockerfile` sets it to `0.0.0.0`
+  *inside the container*, which is safe because a container's interfaces are
+  not the host's.
+- The `ports:` entry in `compose.yaml` (`127.0.0.1:8870:8870`) is what decides
+  who can reach it from the host. Loopback means only processes on the host
+  itself.
+
+The service has no authentication, so nothing here widens that for you. To
+serve a client on another machine you have two routes:
+
+1. **Tunnel, no change to the deployment.** From the client machine,
+   `ssh -L 8870:127.0.0.1:8870 <host>`, then use
+   `http://127.0.0.1:8870` there. Nothing is exposed to the network.
+2. **Publish it deliberately.** Change the host side of the `ports:` entry to
+   an interface address of the host (or `0.0.0.0` for all of them), in a
+   compose override file of your own rather than by editing `compose.yaml`
+   (whose loopback binding is asserted by the suite and declared in
+   `consuming.json`). Compose appends port lists when it merges files, so the
+   override must replace the entry (`ports: !override`, Compose 2.24 or
+   later). Then put a reverse proxy that authenticates and terminates TLS in
+   front of it, open only that in the host's firewall, and keep the engine
+   unpublished. The engine has no `ports:` and must stay that way: it is
+   reachable only by the service.
+
+Running the service outside a container (*Without the container*) needs
+`NARRATE_BIND` set to the interface to listen on, with the same caution.
 
 ### Profiles — CPU by default, GPU by opting in
 
@@ -193,7 +240,7 @@ Reading a Dockerfile is the first step toward forking it.
 
 ### Without the container
 
-The service itself is standard library only, so it runs from a checkout against
+The service itself is standard library only, so it runs from a clone against
 any reachable engine:
 
 ```bash
@@ -237,6 +284,20 @@ deployment is down. ⭐ **That measurement is
 at its pinned digest, the README's own request, and what `narrate.mpeg` read
 off the bytes that came back. ⚠️ **It also refuted something**, which is what a
 first live run is for.
+
+## Third-party
+
+This repository ships none of the following; the compose files pull or a
+running engine loads them.
+
+| Component | What it is here | Licence |
+|---|---|---|
+| [Kokoro-FastAPI](https://github.com/remsky/Kokoro-FastAPI) (`ghcr.io/remsky/kokoro-fastapi-cpu`, and `-gpu` under the GPU profile), pinned by tag and digest in `compose.yaml` and `compose.gpu.yaml` | the speech engine this service talks to over HTTP | Apache-2.0, per the `LICENSE` of the upstream repository at tag `v0.8.2`. The CPU image was pulled at its pinned digest and carries no licence file of its own. The GPU image was not inspected: see the upstream project |
+| [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) model weights (`kokoro-v1_0.pth`, inside the engine image) | the voice model | Apache-2.0, as declared by the upstream model card. The model card also lists the training data and its licences: see the upstream project |
+| [espeak-ng](https://github.com/espeak-ng/espeak-ng) 1.52.0 (Debian package, inside the CPU engine image) | the engine's phonemiser | GPL-3.0-or-later for the bulk of it, per the package's `/usr/share/doc/espeak-ng/copyright` in the CPU image, which also lists a few files under other terms. It is a separate program in the engine's container, not part of this repository |
+
+Read the upstream projects' own terms before you redistribute an engine image
+or its weights.
 
 ## Layout
 

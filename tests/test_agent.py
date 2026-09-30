@@ -164,7 +164,7 @@ class TestWhatTheAdapterRefusesAndHow:
             call_tool(adapter, "__init__", {})
 
     def test_no_returned_path_leaves_the_store(self, adapter):
-        """⛔ R7 and R4. The store directory is a container path or somebody's
+        """⛔ The store directory is a container path or somebody's
         home directory, and the caller does not need it."""
         body = payload_of(handle(
             rpc("tools/call", name="synthesize",
