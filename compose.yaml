@@ -58,6 +58,8 @@ services:
   narrate:
     build:
       context: .
+      labels:
+        com.local.compose.project: narrate-service
     image: narrate-service:local
     depends_on:
       - engine
